@@ -1,0 +1,33 @@
+{
+    "name": "KEI Admin Tools",
+    "description": "Admin",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": [
+        "tabs"
+    ],
+    "host_permissions": [
+        "http://cyber-admin.kei.re.kr/user/member/memberList.do"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "http://cyber-admin.kei.re.kr/user/member/memberList.do"
+            ],
+            "js": [
+                "js/jquery-2.1.1.js",
+                "js/content_script.js"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "js/kei_admin.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}
