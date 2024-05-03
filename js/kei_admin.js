@@ -158,27 +158,74 @@ function getMemberDataArrayPromiseDeprecated(mailArray = []) {
 
 /** @returns {Promise} */
 function getCourseDataPromise(memberData) {
+    // return new Promise((resolve, reject) => {
+    //     const requestData = {
+    //         dspLinkMenuId: "MG0086",
+    //         dspMenuId: "MG0085",
+    //         searchCsMemberSeq: memberData.csMemberSeq
+    //     };
+    //     // First AJAX request
+    //     jQuery.ajax({
+    //         url: "/user/member/memberCourseHistoryPopup.do",
+    //         type: "post",
+    //         data: requestData,
+    //         dataType: "html",
+    //         success: function (htmlData) {
+    //             // Process HTML data if needed
+    //             // ...
+    //             console.log(htmlData);
+
+    //             // Second AJAX request
+    //             jQuery.ajax({
+    //                 url: "/user/member/selectMemberCourseHistoryPopup.do",
+    //                 type: "post",
+    //                 data: jQuery("#memberSearchForm_member").serialize(),
+    //                 dataType: "json",
+    //                 success: function (jsonData) {
+    //                     // Process JSON data if needed
+    //                     // ...
+
+    //                     resolve(jsonData);
+    //                 },
+    //                 error: function (xhr, status, error) {
+    //                     reject(error);
+    //                 }
+    //             });
+    //         },
+    //         error: function (xhr, status, error) {
+    //             reject(error);
+    //         }
+    //     });
+    // });
+
+    // return new Promise((resolve, reject) => {
+    //     var $form = jQuery("#memberSearchForm");
+    //     var result = "";
+    //     var data = new Object();
+    //     data.dspLinkMenuId = $("#dspLinkMenuId_member", $form).val();
+    //     data.dspMenuId = $("#dspMenuId_member", $form).val();
+    //     data.searchCsMemberSeq = memberData[0].csMemberSeq;
     return new Promise((resolve, reject) => {
-        var $form = jQuery("#memberSearchForm");
-        var result = "";
-        var data = new Object();
-        data.dspLinkMenuId = $("#dspLinkMenuId_member", $form).val();
-        data.dspMenuId = $("#dspMenuId_member", $form).val();
-        data.searchCsMemberSeq = memberData.csMemberSeq;
+        const requestData = {
+            dspLinkMenuId: "MG0086",
+            dspMenuId: "MG0085",
+            searchCsMemberSeq: memberData[0].csMemberSeq
+        };
         jQuery.ajax({
             url: "/user/member/memberCourseHistoryPopup.do",
             type: "post",
-            data: data,
+            // data: data,
+            data: requestData,
             datatype: "html",
             tryCount: 0,
             retryLimit: 3,
-            async: true,
+            // async: true,
             success: function (data) {
                 result = cfn_trim(data.toString());
                 jQuery("#applyRegArea").html(result);
                 var $memberForm = jQuery("#memberSearchForm_member");
                 $memberForm[0].searchListCnt_member.value = 100;
-                $memberForm[0].searchCsMemberSeq_member.value = memberData.csMemberSeq;
+                $memberForm[0].searchCsMemberSeq_member.value = memberData[0].csMemberSeq;
                 jQuery("#pageIndex_member", $memberForm).val(1);
                 resolve(new Promise(function (resolve, reject) {
                     jQuery.ajax({
@@ -190,10 +237,15 @@ function getCourseDataPromise(memberData) {
                         retryLimit: 3,
                         async: true,
                         success: function (data) {
-                            for (var i = 0; i < data.list.length; i++) {
-                                data.list[i] = (({ csYear, csCategoryName, csTitle, csCompletionYn, studyStartDate, studyEndDate, openStartDate, openEndDate }) => ({ csYear, csCategoryName, csTitle, csCompletionYn, studyStartDate, studyEndDate, openStartDate, openEndDate }))(data.list[i]);
+                            const resultData = {
+                                member: memberData[0],
+                                list: []
                             }
-                            resolve(data);
+                            resultData.member = memberData[0];
+                            for (var i = 0; i < data.list.length; i++) {
+                                resultData.list[i] = (({ csYear, csCategoryName, csTitle, csCompletionYn, studyStartDate, studyEndDate, openStartDate, openEndDate }) => ({ csYear, csCategoryName, csTitle, csCompletionYn, studyStartDate, studyEndDate, openStartDate, openEndDate }))(data.list[i]);
+                            }
+                            resolve(resultData);
                         }, error: function (xhr, status, error) {
                             console.log(xhr);
                             console.log(memberData.cxMemberEmail);
@@ -275,6 +327,16 @@ function search() {
                 .then((userDataArray) => {
                     saveAsJSON("", userDataArray);
                 })
+        });
+}
+
+/** @returns {void} */
+function searchMembers() {
+    var input = prompt("Input Mail Address(es)");
+    mailArray = input.trim().replace(/\r/g, "").split("\n");
+    getMemberDataArrayPromiseLimit(mailArray)
+        .then((memberDataArray) => {
+            saveAsJSON("", memberDataArray);
         });
 }
 
