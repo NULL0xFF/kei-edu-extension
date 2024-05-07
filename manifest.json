@@ -7,12 +7,14 @@
         "tabs"
     ],
     "host_permissions": [
-        "http://cyber-admin.kei.re.kr/user/member/memberList.do"
+        "http://cyber-admin.kei.re.kr/user/member/memberList.do",
+        "http://cyber-admin.kei.re.kr/cmmn/main.do"
     ],
     "content_scripts": [
         {
             "matches": [
-                "http://cyber-admin.kei.re.kr/user/member/memberList.do"
+                "http://cyber-admin.kei.re.kr/user/member/memberList.do",
+                "http://cyber-admin.kei.re.kr/cmmn/main.do"
             ],
             "js": [
                 "js/jquery-2.1.1.js",
@@ -23,7 +25,9 @@
     "web_accessible_resources": [
         {
             "resources": [
-                "js/kei_admin.js"
+                "js/dashboard.js",
+                "js/member.js",
+                "js/shared.js"
             ],
             "matches": [
                 "<all_urls>"
