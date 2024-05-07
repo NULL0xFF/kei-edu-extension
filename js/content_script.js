@@ -9,18 +9,20 @@ function loadScript(url) {
     });
 }
 
-// Load shared.js for every page
+// Load shared.js first
 loadScript(chrome.runtime.getURL('js/shared.js'))
-    .then(() => console.log("Shared script loaded"))
-    .catch(error => console.error("Error loading shared.js:", error));
+    .then(() => {
+        console.log("Shared script loaded");
 
-// Determine which page we're on and load the appropriate JavaScript file
-if (window.location.href.includes("user/member/memberList.do")) {
-    loadScript(chrome.runtime.getURL('js/member.js'))
-        .then(() => console.log("Member script loaded"))
-        .catch(error => console.error("Error loading member.js:", error));
-} else if (window.location.href.includes("cmmn/main.do")) {
-    loadScript(chrome.runtime.getURL('js/dashboard.js'))
-        .then(() => console.log("Dashboard script loaded"))
-        .catch(error => console.error("Error loading dashboard.js:", error));
-}
+        // Determine which page we're on and load the appropriate JavaScript file
+        if (window.location.href.includes("user/member/memberList.do")) {
+            return loadScript(chrome.runtime.getURL('js/member.js'))
+                .then(() => console.log("Member script loaded"))
+                .catch(error => console.error("Error loading member.js:", error));
+        } else if (window.location.href.includes("cmmn/main.do")) {
+            return loadScript(chrome.runtime.getURL('js/dashboard.js'))
+                .then(() => console.log("Dashboard script loaded"))
+                .catch(error => console.error("Error loading dashboard.js:", error));
+        }
+    })
+    .catch(error => console.error("Error loading shared.js:", error));
