@@ -1,133 +1,108 @@
 /**
- * Save data as JSON file
- * @param {string} fileName - The name of the file to save.
- * @param {Object} data - The data to save.
- * @returns {void}
+ * @file member.js
+ * @description This file contains classes and functions related to members.
  */
-function saveAsJSON(fileName, data) {
-    // console.log("saveAsJSON(" + fileName + ", ... ) called");
-    var fileContent = JSON.stringify(data);
-    var bb = new Blob([fileContent], { type: "text/plain" });
-    var a = document.createElement("a");
 
-    a.download = fileName + "_" + new Date().toISOString() + ".json";
-    a.href = window.URL.createObjectURL(bb);
-    a.click();
+/**
+ * Represents a member.
+ * @class
+ * @constructor
+ * @param {number} csMemberSeq - The member sequence number.
+ * @param {string} csMemberId - The member ID.
+ * @param {string} csMemberName - The member name.
+ * @param {string} cxMemberBirthday - The member birthday.
+ * @param {string} cxMemberEmail - The member email.
+ * @param {string} cxCompanyName - The company name.
+ * @param {string} cxDepartmentName - The department name.
+ * @param {string} cxDivisionCdName - The division code name.
+ * @param {string} csCertiType - The certification type.
+ * @returns {Member} - The member object.
+ */
+class Member {
+    constructor(csMemberSeq, csMemberId, csMemberName, cxMemberBirthday, cxMemberEmail, cxCompanyName, cxDepartmentName, cxDivisionCdName, csCertiType) {
+        this.csMemberSeq = csMemberSeq;
+        this.csMemberId = csMemberId;
+        this.csMemberName = csMemberName;
+        this.cxMemberBirthday = cxMemberBirthday;
+        this.cxMemberEmail = cxMemberEmail;
+        this.cxCompanyName = cxCompanyName;
+        this.cxDepartmentName = cxDepartmentName;
+        this.cxDivisionCdName = cxDivisionCdName;
+        this.csCertiType = csCertiType;
+    }
 }
 
 /**
- * Fetch member data for a single email address.
- * @param {string} mailAddress - The email address to search for.
- * @returns {Promise<Object>} - A promise that resolves with the member data.
+ * Represents a member request.
+ * @class
+ * @constructor
+ * @param {string} search - The search criteria.
+ * @param {number} count - The number of search results to return.
+ * @returns {MemberRequest} - The member request object.
  */
-function fetchMember(mailAddress) {
-    var form = {
-        searchCsTitle: mailAddress,
-        searchListCnt: 100,
-        pageIndex: 1
-    };
+class MemberRequest {
+    static Order = {
+        NAME_ASC: 1, // Name Ascending (이름 오름차순)
+        NAME_DESC: -1, // Name Descending (이름 내림차순)
+        ID_ASC: 2, // Username Ascending (아이디 오름차순)
+        ID_DESC: -2, // Username Descending (아이디 내림차순)
+        DATE_ASC: 3, // Registration Date Ascending (회원가입일 오름차순)
+        DATE_DESC: -3 // Registration Date Descending (회원가입일 내림차순)
+    }
+    static Status = {
+        ALL: '', // All (전체)
+        APPROVAL: 'approval', // Approval (승인)
+        WAIT: 'wait', // Waiting (대기)
+        LEAVE: 'leave', // Leave (탈퇴)
+        RELEAVE: 'releave' // Leave Requested (탈퇴요청)
+    }
+    static SearchCategory = {
+        ALL: '', // All (전체)
+        NAME: 'memberName', // Name (이름)
+        ID: 'memberId', // Username (아이디)
+        BIRTHDAY: 'memberBirthday', // Birthday (생년월일)
+        EMAIL: 'memberEmail', // Email (이메일)
+        COMPANY: 'cxCompanyName' // Company (소속기관)
+    }
+    constructor(count = 10, search = '') {
+        this.pageIndex = 1;
+        this.searchListCnt = count;
+        this.orderBy = this.constructor.Order.DATE_DESC;
+        this.dspLinkMenuId = 'MG0086';
+        this.dspMenuId = 'MG0086';
+        this.searchCsStatusCd = this.constructor.Status.APPROVAL; // Approval (승인)
+        this.searchMemberDivision = ''; // Member Type (회원유형)
+        this.searchMemberGubun = this.constructor.SearchCategory.ALL;
+        this.searchCsTitle = search;
+    }
+}
+
+/**
+ * Fetches the total number of active members from the server.
+ * @function getActiveMemberCount
+ * @returns {Promise} - The promise object representing the total number of active members.
+ * @throws {Error} - The error thrown when failed to fetch total active members from server.
+ */
+function getActiveMemberCount() {
     return new Promise((resolve, reject) => {
         jQuery.ajax({
             url: "/user/member/selectMemberList.do",
             type: "post",
-            data: form,
+            data: new MemberRequest(),
             dataType: "json",
+            tryCount: 0,
+            retryLimit: 3,
             success: function (data) {
-                if (data.list.length === 0) {
-                    console.error(mailAddress + " not found on server");
-                    resolve(null);
-                } else {
-                    var filteredData = data.list.filter(item => item.cxMemberEmail === mailAddress);
-                    if (filteredData.length === 0) {
-                        console.error(mailAddress + " not found on server");
-                        resolve(null);
-                    } else {
-                        console.info("found a member on server!");
-                        resolve(filteredData.map(item => ({
-                            csMemberSeq: item.csMemberSeq,
-                            csMemberId: item.csMemberId,
-                            csMemberName: item.csMemberName,
-                            cxMemberBirthday: item.cxMemberBirthday,
-                            cxMemberEmail: item.cxMemberEmail,
-                            cxCompanyName: item.cxCompanyName,
-                            cxDepartmentName: item.cxDepartmentName,
-                            cxDivisionCdName: item.cxDivisionCdName,
-                            csCertiType: item.csCertiType
-                        })));
-                    }
-                }
+                resolve(data.cnt);
             },
             error: function (xhr, status, error) {
-                console.error(status);
-                reject(error);
-            }
-        })
-    })
-}
-
-/**
- * Fetch course data for a single member.
- * @param {Object} memberData - The member data to search for.
- * @returns {Promise<Object>} - A promise that resolves with the course data.
- */
-function fetchCourse(memberData) {
-    const requestData = {
-        dspLinkMenuId: $("#dspLinkMenuId_member").val(),
-        dspMenuId: $("#dspMenuId_member").val(),
-        searchCsMemberSeq: memberData.csMemberSeq
-    };
-
-    return new Promise((resolve, reject) => {
-        jQuery.ajax({
-            url: "/user/member/memberCourseHistoryPopup.do",
-            type: "post",
-            data: requestData,
-            dataType: "html",
-            success: function (data) {
-                result = cfn_trim(data.toString());
-                jQuery("#applyRegArea").html(result);
-                var $memberForm = jQuery("#memberSearchForm_member");
-                $memberForm[0].searchListCnt_member.value = 100;
-                $memberForm[0].searchCsMemberSeq_member.value = memberData.csMemberSeq;
-                jQuery("#pageIndex_member", $memberForm).val(1);
-                resolve(new Promise((resolve, reject) => {
-                    jQuery.ajax({
-                        url: "/user/member/selectMemberCourseHistoryPopup.do",
-                        type: "post",
-                        data: $memberForm.serialize(),
-                        dataType: "json",
-                        success: function (data) {
-                            console.info("found course data from server!");
-                            const resultData = {
-                                member: memberData,
-                                list: []
-                            }
-                            resultData.member = memberData;
-                            for (var i = 0; i < data.list.length; i++) {
-                                resultData.list[i] = (({ csYear, csCategoryName, csTitle, csCompletionYn, studyStartDate, studyEndDate, openStartDate, openEndDate }) => ({ csYear, csCategoryName, csTitle, csCompletionYn, studyStartDate, studyEndDate, openStartDate, openEndDate }))(data.list[i]);
-                            }
-                            resolve(resultData);
-                        }, error: function (xhr, status, error) {
-                            console.log(xhr);
-                            console.log(memberData.cxMemberEmail);
-                            this.tryCount++;
-                            if (this.tryCount <= this.retryLimit) {
-                                jQuery.ajax(this);
-                                return;
-                            } else {
-                                console.error("failed to fetch course data from server!");
-                                reject(xhr, status, error);
-                            }
-                        }
-                    });
-                }));
-            }, error: function (xhr, status, error) {
-                console.log(memberData.cxMemberEmail);
+                console.log(xhr);
                 this.tryCount++;
                 if (this.tryCount <= this.retryLimit) {
                     jQuery.ajax(this);
                     return;
                 } else {
+                    console.error("failed to fetch total active members from server!");
                     reject(xhr, status, error);
                 }
             }
@@ -136,93 +111,135 @@ function fetchCourse(memberData) {
 }
 
 /**
- * Batching function for dividing work into smaller chunks.
- * @param {Array} batch - The array of items to process.
- * @param {Function} func - The function to apply to each item in the batch.
- * @returns {Promise<Array>} - A promise that resolves with the results of the function applied to each item in the batch.
- * @async
+ * Fetches the active members from the server.
+ * @function getActiveMembers
+ * @param {number} count - The number of active members to fetch.
+ * @returns {Promise} - The promise object representing the active members.
  */
-async function runBatch(batch, func) {
-    const promises = [];
-    for (var i = 0; i < batch.length; i++) {
-        promises.push(func(batch[i]));
-    }
-    return await Promise.all(promises);
+function getActiveMembers(count = 10) {
+    return new Promise((resolve, reject) => {
+        jQuery.ajax({
+            url: "/user/member/selectMemberList.do",
+            type: "post",
+            data: new MemberRequest(count),
+            dataType: "json",
+            tryCount: 0,
+            retryLimit: 3,
+            success: function (data) {
+                const members = [];
+                for (const item of data.list) {
+                    // Skip if the member's name, birthday and email are masked '*'.
+                    // if (item.csMemberName === '*' && item.cxMemberBirthday === '*' && item.cxMemberEmail === '*') {
+                    //     continue;
+                    // }
+                    members.push(new Member(item.csMemberSeq, item.csMemberId, item.csMemberName, item.cxMemberBirthday, item.cxMemberEmail, item.cxCompanyName, item.cxDepartmentName, item.cxDivisionCdName, item.csCertiType));
+                }
+                resolve(members);
+            },
+            error: function (xhr, status, error) {
+                console.log(xhr);
+                this.tryCount++;
+                if (this.tryCount <= this.retryLimit) {
+                    jQuery.ajax(this);
+                    return;
+                } else {
+                    console.error("failed to fetch active members from server!");
+                    reject(xhr, status, error);
+                }
+            }
+        });
+    });
 }
 
 /**
- * Fetch member data for a list of email addresses.
- * @param {Array<string>} mailArray - The list of email addresses to search for.
- * @param {number} [limit=6] - The number of email addresses to search for in a single batch.
- * @returns {Promise<Array<Object>>} - A promise that resolves with an array of member data.
- * @async
+ * Fetch the active members in the database.
+ * @function fetchMembers
+ * @param {string} action - The action to perform ('add' or 'update').
+ * @returns {Promise} - The promise object representing the processed active members.
  */
-async function fetch(mailArray, limit = 6) {
-    var batch = [];
-    while (mailArray.length > 0) {
-        batch.push(mailArray.splice(0, limit));
+async function fetchMembers(action) {
+    console.debug('Fetching count of active members...');
+    const activeMemberCount = await getActiveMemberCount();
+    console.debug(`Found ${activeMemberCount} active members.`);
+
+    console.debug('Fetching active members...');
+    const members = await getActiveMembers(activeMemberCount);
+    console.debug(`Found ${members.length} active members.`);
+
+    if (action === 'add') {
+        console.debug('Adding active members to the database...');
+        await addData('members', members);
+        console.debug(`Successfully added ${members.length} members to the database.`);
+    } else if (action === 'update') {
+        console.log('Updating active members in the database...');
+        await updateData('members', members);
+        console.log(`Successfully updated ${members.length} members in the database.`);
+    } else {
+        throw new Error(`Unknown action: ${action}`);
     }
 
-    var rawMembers = [];
-    for (var i = 0; i < batch.length; i++) {
-        var batchData = await runBatch(batch[i], fetchMember);
-        for (var j = 0; j < batchData.length; j++) {
-            rawMembers.push(batchData[j]);
-        }
-    }
+    return members;
+}
 
-    var members = [];
-    for (var i = 0; i < rawMembers.length; i++) {
-        if (rawMembers[i]) {
-            for (var j = 0; j < rawMembers[i].length; j++) {
-                members.push(rawMembers[i][j]);
+/**
+ * Adds the active members to the database.
+ * @function addMembers
+ * @returns {Promise} - The promise object representing the added active members.
+ */
+async function addMembers() {
+    return await fetchMembers('add');
+}
+
+/**
+ * Updates the active members in the database.
+ * @function updateMembers
+ * @returns {Promise} - The promise object representing the updated active members.
+ */
+async function updateMembers() {
+    return await fetchMembers('update');
+}
+
+/**
+ * Checks if the member belongs to the company.
+ * @function isBelongedToCompany
+ * @param {Member} member - The member to check.
+ * @param {string} keyword - The keyword to search.
+ * @returns {boolean} - The result indicating if the member belongs to the company.
+ */
+function isBelongedToCompany(member, keyword) {
+    return (member.cxCompanyName && member.cxCompanyName.includes(keyword)) ||
+        (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
+}
+
+async function searchMembers(input = '') {
+    // Get all members from the database if exists
+    var exist = await isExist('members');
+    if (!exist) {
+        addMembers();
+    }
+    const members = await getData('members');
+    // customTable(members);
+    // console.log(`Found ${members.length} members in the database.`);
+
+    // Split the search keywords
+    const keywords = input.split(' ');
+
+    // Search for members that match the search criteria
+    const results = [];
+    for (const member of members) {
+        for (const keyword of keywords) {
+            // Search for member's attributes that match the keyword
+            if (isBelongedToCompany(member, keyword)) {
+                results.push(member);
+                break;
             }
         }
     }
 
-    batch = [];
-    while (members.length > 0) {
-        batch.push(members.splice(0, limit));
-    }
+    // Table the search results
+    // customTable(results);
+    // console.log(`Found ${results.length} members that match the search criteria.`)
 
-    var result = [];
-    for (var i = 0; i < batch.length; i++) {
-        var batchData = await runBatch(batch[i], fetchCourse);
-        for (var j = 0; j < batchData.length; j++) {
-            result.push(batchData[j]);
-        }
-    }
-
-    return result;
-}
-
-/**
- * Search members by mail addresses.
- * @param {number} limit - The limit of members to search for.
- * @returns {Promise<Object>} - A promise that resolves with the member data.
- * @async
- */
-async function searchMembers(limit = 6) {
-    var input = prompt("Input Mail Address(es)");
-    var mailArray = input.trim().replace(/\r/g, "").split("\n");
-
-    console.log("Searching members...")
-    const begin = new Date();
-
-    var batch = [];
-    while (mailArray.length > 0) {
-        batch.push(mailArray.splice(0, limit * 100));
-    }
-
-    const result = [];
-    for (var i = 0; i < batch.length; i++) {
-        console.log(`Batch ${i + 1} of ${batch.length}...`);
-        fetched = await fetch(batch[i], limit);
-        for (var j = 0; j < fetched.length; j++) {
-            result.push(fetched[j]);
-        }
-    }
-
-    console.log("Search completed in " + (new Date() - begin) / 1000 + " seconds.");
-    saveAsJSON("", result);
+    // Return the search results
+    return results;
 }

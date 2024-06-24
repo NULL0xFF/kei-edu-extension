@@ -1,28 +1,51 @@
-// Function to load a JavaScript file dynamically
+/**
+ * @file content_script.js
+ * @description Injects scripts into the page and listens for messages from injected scripts
+ */
+
+/**
+ * Function to load a JavaScript file dynamically
+ * @param {string} url - The URL of the script to load
+ * @returns {Promise} - The promise object representing the loading of the script
+ */
 function loadScript(url) {
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = url;
+        script.src = chrome.runtime.getURL(url);
         script.onload = resolve;
         script.onerror = reject;
         (document.head || document.documentElement).appendChild(script);
     });
 }
 
-// Load shared.js first
-loadScript(chrome.runtime.getURL('js/shared.js'))
-    .then(() => {
-        console.log("Shared script loaded");
+// Inject scripts into the page
+async function injectMainScript() {
+    if (window.location.href.includes("cmmn/main.do")) {
+        const script = 'js/dashboard.js';
+        await loadScript(script)
+            .then(() => console.debug(`Script ${script} loaded`))
+            .catch(error => console.error(`Error loading ${script}:`, error));
+    }
+    const scripts = ['js/xlsx.full.min.js', 'js/shared.js', 'js/course.js', 'js/member.js', 'js/storage.js', 'js/solution.js'];
+    scripts.forEach(script => {
+        loadScript(script)
+            .then(() => console.debug(`Script ${script} loaded`))
+            .catch(error => console.error(`Error loading ${script}:`, error));
+    });
+}
 
-        // Determine which page we're on and load the appropriate JavaScript file
-        if (window.location.href.includes("user/member/memberList.do")) {
-            return loadScript(chrome.runtime.getURL('js/member.js'))
-                .then(() => console.log("Member script loaded"))
-                .catch(error => console.error("Error loading member.js:", error));
-        } else if (window.location.href.includes("cmmn/main.do")) {
-            return loadScript(chrome.runtime.getURL('js/dashboard.js'))
-                .then(() => console.log("Dashboard script loaded"))
-                .catch(error => console.error("Error loading dashboard.js:", error));
-        }
-    })
-    .catch(error => console.error("Error loading shared.js:", error));
+injectMainScript();
+
+// Listen for messages from injected scripts
+window.addEventListener('message', (event) => {
+    // We only accept messages from ourselves
+    if (event.source != window) {
+        return;
+    }
+    // Send message to background script
+    if (event.data.type && (event.data.type === 'FROM_PAGE')) {
+        chrome.runtime.sendMessage(event.data.message, (response) => {
+            window.postMessage({ type: 'FROM_EXTENSION', response: response, messageId: event.data.messageId }, '*');
+        });
+    }
+});
