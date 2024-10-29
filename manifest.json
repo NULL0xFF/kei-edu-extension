@@ -1,28 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "KEI Admin Tools",
-  "version": "1.2",
-  "description": "Administrate KEI E-Learning System",
+  "name": "KEI Edu Admin Tools",
+  "version": "0.0.0",
+  "description": "A extension for managing Korea Environment Institute E-Learning Platform",
   "permissions": [
     "storage",
-    "scripting",
-    "tabs",
-    "activeTab"
+    "unlimitedStorage",
+    "scripting"
   ],
-  "host_permissions": [
-    "http://cyber-admin.kei.re.kr/*"
-  ],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "web_accessible_resources": [
+  "content_scripts": [
     {
-      "resources": [
-        "scripts/*.js"
-      ],
       "matches": [
-        "http://cyber-admin.kei.re.kr/*"
+        "http://cyber-admin.kei.re.kr/*",
+        "https://cyber-admin.kei.re.kr/*"
+      ],
+      "js": [
+        "contentScript.bundle.js"
       ]
     }
+  ],
+  "host_permissions": [
+    "http://cyber-admin.kei.re.kr/*",
+    "https://cyber-admin.kei.re.kr/*"
   ]
 }
