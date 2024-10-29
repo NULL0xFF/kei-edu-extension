@@ -5,33 +5,20 @@
   "description": "Administrate KEI E-Learning System",
   "permissions": [
     "storage",
-    "unlimitedStorage",
-    "scripting"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "http://cyber-admin.kei.re.kr/*"
-      ],
-      "js": [
-        "js/jquery-2.1.1.min.js",
-        "js/content_script.js"
-      ]
-    }
+    "scripting",
+    "tabs",
+    "activeTab"
   ],
   "host_permissions": [
     "http://cyber-admin.kei.re.kr/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "web_accessible_resources": [
     {
       "resources": [
-        "js/xlsx.full.min.js",
-        "js/shared.js",
-        "js/dashboard.js",
-        "js/member.js",
-        "js/course.js",
-        "js/storage.js",
-        "js/solution.js"
+        "scripts/*.js"
       ],
       "matches": [
         "http://cyber-admin.kei.re.kr/*"
