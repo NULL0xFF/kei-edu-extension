@@ -29,7 +29,7 @@ pids
 /tmp/
 /temp/
 /out/
-/*.swp
+*.swp
 
 # Mac OS files
 .DS_Store
@@ -42,7 +42,7 @@ pids
 
 # Editor and IDE files
 .idea/
-.vscode/
+/.vscode/
 *.sublime-project
 *.sublime-workspace
 
@@ -70,27 +70,6 @@ pids
 # Jest testing snapshots
 **/__snapshots__/
 **/*.snap
-
-# Svelte build artifacts (if using Svelte)
-public/build/
-
-# Next.js build output (if using Next.js)
-.next/
-
-# Nuxt.js build output (if using Nuxt.js)
-.nuxt/
-
-# React Native specific
-.expo/
-*.expo
-
-# VSCode extensions
-.vscode-test/
-
-# IntelliJ IDEA files
-*.iml
-*.iws
-*.ipr
 
 # Other files
 Thumbs.db
