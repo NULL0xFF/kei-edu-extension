@@ -3,6 +3,10 @@ name: Build and Test
 on:
   pull_request:
     branches: [ main ]
+    types: [ closed ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -24,12 +28,56 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-        # Step 4: Build the project
-        # Build the project
+      # Step 4: Build the project
       - name: Build the project
         run: npm run build
 
-      # Step 5: Upload build artifacts
+      # Step 5: Get version from package.json
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      # Step 6: Create zip file of build artifacts
+      - name: Create zip file of build artifacts
+        run: zip -r build-artifacts.zip dist/
+
+      # Step 7: Check if PR was merged
+      - name: Check if PR was merged
+        id: check_pr
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ] && [ "${{ github.event.pull_request.merged }}" == "true" ]; then
+            echo "merged=true" >> $GITHUB_OUTPUT
+          else
+            echo "merged=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Step 8: Create Release (only when PR is merged into main)
+      - name: Create Release
+        if: steps.check_pr.outputs.merged == 'true'
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+
+      # Step 9: Upload Release Asset (only when PR is merged into main)
+      - name: Upload Release Asset
+        if: steps.check_pr.outputs.merged == 'true'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-artifacts.zip
+          asset_name: build-artifacts.zip
+          asset_content_type: application/zip
+
+      # Step 10: Upload build artifacts (for all events)
       - name: Upload build artifacts
         if: always()
         uses: actions/upload-artifact@v4
