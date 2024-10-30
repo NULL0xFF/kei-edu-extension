@@ -1,5 +1,5 @@
 import * as jQuery from 'jquery';
-
+import {getCSRFToken} from './shared.js';
 /**
  * Represents a member.
  * @class
@@ -87,7 +87,7 @@ function getActiveMemberCount() {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request
@@ -125,7 +125,7 @@ function getActiveMembers(count = 10) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request

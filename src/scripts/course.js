@@ -1,4 +1,5 @@
 import * as jQuery from 'jquery';
+import {getCSRFToken} from './shared.js';
 
 /**
  * Represents a completion.
@@ -147,12 +148,10 @@ class ApplicationRequest {
  */
 class Course {
   static Status = {
-    ACTIVE: 'active',
-    INACTIVE: 'inactive'
+    ACTIVE: 'active', INACTIVE: 'inactive'
   }
   static Type = {
-    ALWAYS: 'always',
-    PERIOD: 'period'
+    ALWAYS: 'always', PERIOD: 'period'
   }
   static Category = {
     INTRO: '입문',
@@ -249,7 +248,7 @@ function getCompletionCount(csCourseActiveSeq) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request
@@ -291,7 +290,7 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
     return new Promise((resolve, reject) => {
       jQuery.ajax({
         headers: {
-          'X-CSRF-TOKEN': csrfToken
+          'X-CSRF-TOKEN': getCSRFToken()
         },
         xhrFields: {
           withCredentials: true // Include cookies in the request
@@ -333,7 +332,7 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
     return new Promise((resolve, reject) => {
       jQuery.ajax({
         headers: {
-          'X-CSRF-TOKEN': csrfToken
+          'X-CSRF-TOKEN': getCSRFToken()
         },
         xhrFields: {
           withCredentials: true // Include cookies in the request
@@ -341,8 +340,7 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
         url: "/course/apply/selectApplyList.do",
         type: "post",
         data: new ApplicationRequest(Number(csCourseActiveSeq),
-            Number(csCourseMasterSeq),
-            count),
+            Number(csCourseMasterSeq), count),
         dataType: "json",
         tryCount: 0,
         retryLimit: 3,
@@ -372,16 +370,11 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
   .then(([completionList, startDateMap]) => {
     // Fill in the missing csStudyStartDate
     return completionList.map(completion => {
-      return new Completion(
-          completion.csMemberSeq,
-          completion.csMemberId,
-          completion.csMemberName,
-          completion.cxMemberEmail,
+      return new Completion(completion.csMemberSeq, completion.csMemberId,
+          completion.csMemberName, completion.cxMemberEmail,
           completion.csApplyStatusCd,
           startDateMap.get(completion.csMemberSeq) || '', // Use the study start date from the map or default to ''
-          completion.csCompletionYn,
-          completion.cxCompletionDate
-      );
+          completion.csCompletionYn, completion.cxCompletionDate);
     });
   })
   .catch(error => {
@@ -407,7 +400,7 @@ function getCourseClassCount(csCourseActiveSeq) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request
@@ -452,7 +445,7 @@ function getCourseExamCount(course) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request
@@ -490,7 +483,7 @@ function getTotalCourseCount() {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request
@@ -529,7 +522,7 @@ function getCourses(count = 10) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
-        'X-CSRF-TOKEN': csrfToken
+        'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
         withCredentials: true // Include cookies in the request
@@ -541,23 +534,12 @@ function getCourses(count = 10) {
       tryCount: 0,
       retryLimit: 3,
       success: function (data) {
-        resolve(data.list.map(course => new Course(
-            course.csCourseActiveSeq,
-            course.csCourseMasterSeq,
-            course.csTitle,
-            course.csStatusCd,
-            course.csCourseTypeCd,
-            course.csYear,
-            course.csApplyStartDate,
-            course.csApplyEndDate,
-            course.csStudyStartDate,
-            course.csStudyEndDate,
-            course.csOpenStartDate,
-            course.csOpenEndDate,
-            null,
-            course.csTitlePath,
-            null
-        )));
+        resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
+            course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
+            course.csCourseTypeCd, course.csYear, course.csApplyStartDate,
+            course.csApplyEndDate, course.csStudyStartDate,
+            course.csStudyEndDate, course.csOpenStartDate, course.csOpenEndDate,
+            null, course.csTitlePath, null)));
       },
       error: function (xhr, status, error) {
         console.log(xhr);

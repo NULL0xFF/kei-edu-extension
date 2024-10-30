@@ -1,4 +1,13 @@
 /**
+ * Get the CSRF token from the meta tag.
+ * @function getCSRFToken
+ * @returns {string} - The CSRF token.
+ */
+export function getCSRFToken() {
+  return document.querySelector('meta[name="_csrf"]').getAttribute('content');
+}
+
+/**
  * Tokenizes the given text by splitting it by comma and trimming each element.
  * @function tokenize
  * @param {string} text - The text to tokenize.
