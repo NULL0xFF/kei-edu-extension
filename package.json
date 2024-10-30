@@ -1,6 +1,6 @@
 {
   "name": "kei-edu-extension",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "A extension for managing Korea Environment Institute E-Learning Platform",
   "scripts": {
     "build": "webpack --mode production",
