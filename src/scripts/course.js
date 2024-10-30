@@ -248,6 +248,12 @@ class CourseRequest {
 function getCompletionCount(csCourseActiveSeq) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      xhrFields: {
+        withCredentials: true // Include cookies in the request
+      },
       url: "/course/cmpl/selectCmplList.do",
       type: "post",
       data: new CompletionRequest(csCourseActiveSeq),
@@ -284,6 +290,12 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
   function fetchCompletionList() {
     return new Promise((resolve, reject) => {
       jQuery.ajax({
+        headers: {
+          'X-CSRF-TOKEN': csrfToken
+        },
+        xhrFields: {
+          withCredentials: true // Include cookies in the request
+        },
         url: "/course/cmpl/selectCmplList.do",
         type: "post",
         data: new CompletionRequest(Number(csCourseActiveSeq), count),
@@ -320,9 +332,16 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
   function fetchStudyStartDates() {
     return new Promise((resolve, reject) => {
       jQuery.ajax({
+        headers: {
+          'X-CSRF-TOKEN': csrfToken
+        },
+        xhrFields: {
+          withCredentials: true // Include cookies in the request
+        },
         url: "/course/apply/selectApplyList.do",
         type: "post",
-        data: new ApplicationRequest(Number(csCourseActiveSeq), Number(csCourseMasterSeq),
+        data: new ApplicationRequest(Number(csCourseActiveSeq),
+            Number(csCourseMasterSeq),
             count),
         dataType: "json",
         tryCount: 0,
@@ -387,6 +406,12 @@ function getCourseClassCount(csCourseActiveSeq) {
   }
   return new Promise((resolve, reject) => {
     jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      xhrFields: {
+        withCredentials: true // Include cookies in the request
+      },
       url: "/course/active/selectAtiveElementList.do",
       type: "post",
       data: request,
@@ -426,6 +451,12 @@ function getCourseExamCount(course) {
   }
   return new Promise((resolve, reject) => {
     jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      xhrFields: {
+        withCredentials: true // Include cookies in the request
+      },
       url: "/course/active/selectAtiveElementList.do",
       type: "post",
       data: request,
@@ -458,6 +489,12 @@ function getCourseExamCount(course) {
 function getTotalCourseCount() {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      xhrFields: {
+        withCredentials: true // Include cookies in the request
+      },
       url: "/course/active/selectActiveOperList.do",
       type: "post",
       data: new CourseRequest(),
@@ -491,6 +528,12 @@ function getTotalCourseCount() {
 function getCourses(count = 10) {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      xhrFields: {
+        withCredentials: true // Include cookies in the request
+      },
       url: "/course/active/selectActiveOperList.do",
       type: "post",
       data: new CourseRequest(count),
@@ -657,7 +700,8 @@ async function searchCustomCourses(input = '',
   return results;
 }
 
-export async function searchCourses(input = '', year = new Date().getFullYear()) {
+export async function searchCourses(input = '',
+    year = new Date().getFullYear()) {
   // Get all courses from the database
   const exist = await getData('courses');
   if (!exist) {
