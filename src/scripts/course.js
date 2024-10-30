@@ -1,6 +1,7 @@
 import * as jQuery from 'jquery';
 import {customTable, getCSRFToken} from './shared.js';
 import {addData, getData, updateData} from "./storage";
+import {estimatedProgressTime} from "./solution";
 
 /**
  * Represents a completion.
@@ -572,7 +573,9 @@ async function fetchCourses(action) {
   const courses = await getCourses(totalCourseCount);
   console.log(`Fetched ${courses.length} courses.`)
 
+  var started = Date.now();
   for (let i = 0; i < courses.length; i++) {
+    estimatedProgressTime(i, courses.length, started, '과정');
     const course = courses[i];
     console.log(`Processing course [${i
     + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
@@ -596,6 +599,7 @@ async function fetchCourses(action) {
     console.debug(
         `Fetching completions for course ${course.csCourseActiveSeq}...`)
     const completions = await getCourseCompletion(course.csCourseActiveSeq,
+        course.csCourseMasterSeq,
         completionCount);
     console.debug(
         `Fetched ${completions.length} completions for course ${course.csCourseActiveSeq}.`)

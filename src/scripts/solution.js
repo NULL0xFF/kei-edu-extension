@@ -567,3 +567,5 @@ if (window.location.href.includes("user/member/memberList.do")) {
     console.error("Failed to find the button area.");
   }
 }
+
+export {estimatedProgressTime};
