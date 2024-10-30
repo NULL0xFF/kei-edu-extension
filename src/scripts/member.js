@@ -1,5 +1,7 @@
 import * as jQuery from 'jquery';
 import {getCSRFToken} from './shared.js';
+import {addData, getData, isExist, updateData} from "./storage";
+
 /**
  * Represents a member.
  * @class

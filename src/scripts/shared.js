@@ -114,3 +114,11 @@ function saveAsJSON(fileName, data) {
   a.href = window.URL.createObjectURL(bb);
   a.click();
 }
+
+export {
+  tokenize,
+  customTable,
+  toLocalISOFormat,
+  convertToLocalISOFormat,
+  saveAsJSON
+};

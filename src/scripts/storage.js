@@ -103,3 +103,5 @@ async function isExist(id) {
     request.onsuccess = () => resolve(!!request.result);
   });
 }
+
+export {addData, getData, updateData, deleteData, isExist};

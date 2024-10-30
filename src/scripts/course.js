@@ -1,5 +1,6 @@
 import * as jQuery from 'jquery';
-import {getCSRFToken} from './shared.js';
+import {customTable, getCSRFToken} from './shared.js';
+import {addData, getData, updateData} from "./storage";
 
 /**
  * Represents a completion.
