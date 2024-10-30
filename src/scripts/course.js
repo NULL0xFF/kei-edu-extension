@@ -322,7 +322,7 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
       jQuery.ajax({
         url: "/course/apply/selectApplyList.do",
         type: "post",
-        data: new ApplicationRequest(csCourseActiveSeq, csCourseMasterSeq,
+        data: new ApplicationRequest(Number(csCourseActiveSeq), Number(csCourseMasterSeq),
             count),
         dataType: "json",
         tryCount: 0,
@@ -553,8 +553,8 @@ async function fetchCourses(action) {
 
     console.debug(
         `Fetching class count for course ${course.csCourseActiveSeq}...`)
-    var classCount = await getCourseClassCount(course.csCourseActiveSeq);
-    var examCount = await getCourseExamCount(course);
+    const classCount = await getCourseClassCount(course.csCourseActiveSeq);
+    const examCount = await getCourseExamCount(course);
     console.debug(
         `Found ${classCount} classes for course ${course.csCourseActiveSeq}.`)
     console.debug(
@@ -625,7 +625,7 @@ function isCustomCourse(course, keyword) {
 async function searchCustomCourses(input = '',
     year = new Date().getFullYear()) {
   // Get all courses from the database
-  var exist = await getData('courses');
+  const exist = await getData('courses');
   if (!exist) {
     await addCourses();
   }
@@ -657,9 +657,9 @@ async function searchCustomCourses(input = '',
   return results;
 }
 
-async function searchCourses(input = '', year = new Date().getFullYear()) {
+export async function searchCourses(input = '', year = new Date().getFullYear()) {
   // Get all courses from the database
-  var exist = await getData('courses');
+  const exist = await getData('courses');
   if (!exist) {
     await addCourses();
   }
@@ -689,3 +689,5 @@ async function searchCourses(input = '', year = new Date().getFullYear()) {
   // Return the search results
   return results;
 }
+
+export {updateCourses};

@@ -212,9 +212,9 @@ function isBelongedToCompany(member, keyword) {
       || (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
 }
 
-async function searchMembers(input = '') {
+export async function searchMembers(input = '') {
   // Get all members from the database if exists
-  var exist = await isExist('members');
+  const exist = await isExist('members');
   if (!exist) {
     await addMembers();
   }
@@ -238,3 +238,5 @@ async function searchMembers(input = '') {
   // Return the search results
   return results;
 }
+
+export {updateMembers};

@@ -67,7 +67,7 @@ function toLocalISOFormat(date) {
 /**
  * Convert a date string in UTC format to local ISO format
  * @param {string} dateString - The date string in yyyyMMddHHmmss format.
- * @returns {string} The date and time in local ISO format.
+ * @returns {string|null} The date and time in local ISO format.
  */
 function convertToLocalISOFormat(dateString) {
   if (dateString == null || dateString.length !== 14) {
@@ -97,9 +97,9 @@ function convertToLocalISOFormat(dateString) {
  */
 function saveAsJSON(fileName, data) {
   // console.log("saveAsJSON(" + fileName + ", ... ) called");
-  var fileContent = JSON.stringify(data);
-  var bb = new Blob([fileContent], {type: "text/plain"});
-  var a = document.createElement("a");
+  const fileContent = JSON.stringify(data);
+  const bb = new Blob([fileContent], {type: "text/plain"});
+  const a = document.createElement("a");
 
   a.download = fileName + "_" + toLocalISOFormat(new Date()) + ".json";
   a.href = window.URL.createObjectURL(bb);

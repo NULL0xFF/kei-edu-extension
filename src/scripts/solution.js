@@ -1,4 +1,6 @@
 import * as XLSX from "xlsx";
+import {searchMembers, updateMembers} from "./member";
+import {searchCourses, updateCourses} from "./course";
 
 /**
  * Record class that contains member and course information
