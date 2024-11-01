@@ -19,18 +19,20 @@ import {estimatedProgressTime} from "./solution";
  * @param {string} csMemberName - The member name.
  * @param {string} cxMemberEmail - The member email.
  * @param {string} csApplyStatusCd - The application status code.
+ * @param {string} csStudyStartDate - The study start date.
  * @param {string} csCompletionYn - The completion status.
  * @param {string} cxCompletionDate - The completion date.
  * @returns {Completion} - The completion object.
  */
 class Completion {
   constructor(csMemberSeq, csMemberId, csMemberName, cxMemberEmail,
-      csApplyStatusCd, csCompletionYn, cxCompletionDate) {
+      csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
     this.csMemberSeq = csMemberSeq;
     this.csMemberId = csMemberId;
     this.csMemberName = csMemberName;
     this.cxMemberEmail = cxMemberEmail;
     this.csApplyStatusCd = csApplyStatusCd;
+    this.csStudyStartDate = csStudyStartDate;
     this.csCompletionYn = csCompletionYn;
     this.cxCompletionDate = this.formatCompletionDate(cxCompletionDate);
   }
@@ -372,11 +374,15 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
   .then(([completionList, startDateMap]) => {
     // Fill in the missing csStudyStartDate
     return completionList.map(completion => {
-      return new Completion(completion.csMemberSeq, completion.csMemberId,
-          completion.csMemberName, completion.cxMemberEmail,
+      return new Completion(
+          completion.csMemberSeq,
+          completion.csMemberId,
+          completion.csMemberName,
+          completion.cxMemberEmail,
           completion.csApplyStatusCd,
           startDateMap.get(completion.csMemberSeq) || '', // Use the study start date from the map or default to ''
-          completion.csCompletionYn, completion.cxCompletionDate);
+          completion.csCompletionYn,
+          completion.cxCompletionDate);
     });
   })
   .catch(error => {
