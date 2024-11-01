@@ -356,7 +356,15 @@ function saveAsXLSXWithDate(filename, results) {
     if (!dateString) {
       return '';
     } // Handle null or undefined dates
-    const parts = dateString.split('.'); // Split 'yyyy.MM.dd'
+
+    const parts = dateString.trim().split('.'); // Trim and split 'yyyy.MM.dd'
+
+    if (parts.length !== 3) {
+      console.info(
+          `Invalid date format: Expected 'yyyy.MM.dd'\n Received: ${dateString}`);
+      return '';
+    }
+
     return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2,
         '0')}`; // Return 'yyyy-MM-dd'
   };
