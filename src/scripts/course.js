@@ -241,442 +241,773 @@ class CourseRequest {
   }
 }
 
+// =============================================================================
+// OPTIMIZATION UTILITIES
+// =============================================================================
+
 /**
- * Fetches the total number of completion records for a course.
- * @function getCompletionCount
+ * Global cache for API responses to avoid duplicate requests
+ */
+const apiCache = new Map();
+
+/**
+ * Configuration for optimization settings
+ */
+const OPTIMIZATION_CONFIG = {
+  CONCURRENCY_LIMIT: 5, // Number of concurrent API calls
+  RETRY_ATTEMPTS: 3, // Number of retry attempts for failed calls
+  BATCH_DELAY: 100, // Delay between batches in milliseconds
+  CACHE_TTL: 5 * 60 * 1000, // Cache TTL in milliseconds (5 minutes)
+  INCREMENTAL_UPDATE_ENABLED: true // Enable incremental updates
+};
+
+/**
+ * Enhanced API call with retry logic and exponential backoff
+ * @param {Function} apiFunction - The API function to call
+ * @param {Array} args - Arguments to pass to the API function
+ * @param {number} maxRetries - Maximum number of retries
+ * @returns {Promise} - Promise resolving to the API response
+ */
+async function apiCallWithRetry(apiFunction, args = [], maxRetries = OPTIMIZATION_CONFIG.RETRY_ATTEMPTS) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await apiFunction(...args);
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error(`API call failed after ${maxRetries + 1} attempts:`, error);
+        throw error;
+      }
+
+      // Exponential backoff: 1s, 2s, 4s delays
+      const delay = Math.pow(2, attempt) * 1000;
+      console.warn(`API call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, error.message);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/**
+ * Cached API call to avoid duplicate requests
+ * @param {string} cacheKey - Unique key for caching
+ * @param {Function} apiFunction - The API function to call
+ * @param {Array} args - Arguments to pass to the API function
+ * @returns {Promise} - Promise resolving to the API response
+ */
+async function cachedApiCall(cacheKey, apiFunction, args = []) {
+  // Check if result is in cache and not expired
+  if (apiCache.has(cacheKey)) {
+    const cachedResult = apiCache.get(cacheKey);
+    const now = Date.now();
+
+    if (now - cachedResult.timestamp < OPTIMIZATION_CONFIG.CACHE_TTL) {
+      console.debug(`Cache hit for key: ${cacheKey}`);
+      return cachedResult.data;
+    } else {
+      // Remove expired cache entry
+      apiCache.delete(cacheKey);
+    }
+  }
+
+  console.debug(`Cache miss for key: ${cacheKey}, making API call`);
+  const result = await apiCallWithRetry(apiFunction, args);
+
+  // Store result in cache with timestamp
+  apiCache.set(cacheKey, {
+    data: result,
+    timestamp: Date.now()
+  });
+
+  return result;
+}
+
+/**
+ * Process items in parallel batches with concurrency control
+ * @param {Array} items - Items to process
+ * @param {number} concurrencyLimit - Maximum number of concurrent operations
+ * @param {Function} processor - Function to process each item
+ * @param {number} startTime - Start time for progress tracking
+ * @returns {Promise<Array>} - Promise resolving to processed results
+ */
+async function processInBatches(items, concurrencyLimit, processor, startTime) {
+  const results = [];
+  let completed = 0;
+
+  console.log(`Processing ${items.length} items in batches of ${concurrencyLimit}`);
+
+  for (let i = 0; i < items.length; i += concurrencyLimit) {
+    const batch = items.slice(i, i + concurrencyLimit);
+    console.debug(`Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(items.length / concurrencyLimit)}`);
+
+    const batchPromises = batch.map(async (item, batchIndex) => {
+      try {
+        const result = await processor(item, i + batchIndex, items.length);
+        completed++;
+
+        // Update progress
+        if (startTime) {
+          estimatedProgressTime(completed, items.length, startTime, '과정');
+        }
+
+        return { success: true, data: result, index: i + batchIndex };
+      } catch (error) {
+        console.error(`Failed to process item ${i + batchIndex} (${item.csTitle || item.csCourseActiveSeq}):`, error);
+        completed++;
+
+        // Update progress even for failed items
+        if (startTime) {
+          estimatedProgressTime(completed, items.length, startTime, '과정');
+        }
+
+        return { success: false, error: error, index: i + batchIndex, item };
+      }
+    });
+
+    const batchResults = await Promise.allSettled(batchPromises);
+
+    // Process batch results
+    batchResults.forEach((result, batchIndex) => {
+      if (result.status === 'fulfilled') {
+        if (result.value.success) {
+          results.push(result.value.data);
+        } else {
+          console.warn(`Item ${result.value.index} failed:`, result.value.error.message);
+        }
+      } else {
+        console.error(`Batch processing failed for item ${i + batchIndex}:`, result.reason);
+      }
+    });
+
+    // Add delay between batches to be server-friendly
+    if (i + concurrencyLimit < items.length && OPTIMIZATION_CONFIG.BATCH_DELAY > 0) {
+      await new Promise(resolve => setTimeout(resolve, OPTIMIZATION_CONFIG.BATCH_DELAY));
+    }
+  }
+
+  const successCount = results.length;
+  const failureCount = items.length - successCount;
+
+  if (failureCount > 0) {
+    console.warn(`Batch processing completed: ${successCount} succeeded, ${failureCount} failed`);
+  } else {
+    console.log(`Batch processing completed successfully: ${successCount} items processed`);
+  }
+
+  return results;
+}
+
+/**
+ * Check if a course has changed compared to existing data
+ * @param {Course} newCourse - New course data
+ * @param {Course} existingCourse - Existing course data
+ * @returns {boolean} - True if course has changed
+ */
+function hasChanged(newCourse, existingCourse) {
+  const fieldsToCheck = [
+    'csStatusCd',
+    'csStudyEndDate',
+    'csOpenEndDate',
+    'csCourseTypeCd'
+  ];
+
+  return fieldsToCheck.some(field =>
+    newCourse[field] !== existingCourse[field]
+  );
+}
+
+/**
+ * Get courses that need to be updated
+ * @param {Array} allCourses - All courses from API
+ * @param {Array} existingCourses - Existing courses from database
+ * @returns {Array} - Courses that need to be updated
+ */
+function getCoursesToUpdate(allCourses, existingCourses) {
+  if (!OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED || !existingCourses || existingCourses.length === 0) {
+    return allCourses;
+  }
+
+  const existingMap = new Map(
+    existingCourses.map(course => [course.csCourseActiveSeq, course])
+  );
+
+  const coursesToUpdate = allCourses.filter(course => {
+    const existing = existingMap.get(course.csCourseActiveSeq);
+    return !existing || hasChanged(course, existing);
+  });
+
+  console.log(`Incremental update: ${coursesToUpdate.length} of ${allCourses.length} courses need updating`);
+  return coursesToUpdate;
+}
+
+// =============================================================================
+// OPTIMIZED API FUNCTIONS
+// =============================================================================
+
+/**
+ * Optimized version of getCompletionCount with caching and retry logic
+ * @function getCompletionCountOptimized
  * @param {string} csCourseActiveSeq - The course active sequence.
  * @returns {Promise<number>} - The total number of completion records.
- * @throws {Error} - The error that occurred while fetching the completion records.
  */
-function getCompletionCount(csCourseActiveSeq) {
-  return new Promise((resolve, reject) => {
+async function getCompletionCountOptimized(csCourseActiveSeq) {
+  const cacheKey = `completion_count_${csCourseActiveSeq}`;
+
+  const apiCall = () => new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
         'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
-        withCredentials: true // Include cookies in the request
+        withCredentials: true
       },
       url: "/course/cmpl/selectCmplList.do",
       type: "post",
       data: new CompletionRequest(csCourseActiveSeq),
       dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
+      timeout: 30000, // 30 second timeout
       success: function (data) {
         resolve(data.cnt);
       },
       error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          reject(error);
-        }
+        reject(new Error(`Failed to get completion count: ${error} (${status})`));
       }
     });
   });
+
+  return await cachedApiCall(cacheKey, apiCall);
 }
 
 /**
- * Fetches the completion records for a course.
- * @function getCourseCompletion
+ * Optimized version of getCourseClassCount with caching and retry logic
+ * @function getCourseClassCountOptimized
+ * @param {string} csCourseActiveSeq - The course active sequence.
+ * @returns {Promise<number>} - The total number of course classes.
+ */
+async function getCourseClassCountOptimized(csCourseActiveSeq) {
+  const cacheKey = `class_count_${csCourseActiveSeq}`;
+
+  const apiCall = () => new Promise((resolve, reject) => {
+    const request = {
+      csCourseActiveSeq: csCourseActiveSeq,
+      csReferenceTypeCd: 'organization',
+      dspMenuId: 'MG0005',
+      dspLinkMenuId: 'MG0005'
+    };
+
+    jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': getCSRFToken()
+      },
+      xhrFields: {
+        withCredentials: true
+      },
+      url: "/course/active/selectAtiveElementList.do",
+      type: "post",
+      data: request,
+      dataType: "json",
+      timeout: 30000,
+      success: function (data) {
+        resolve(data.list.length);
+      },
+      error: function (xhr, status, error) {
+        reject(new Error(`Failed to get class count: ${error} (${status})`));
+      }
+    });
+  });
+
+  return await cachedApiCall(cacheKey, apiCall);
+}
+
+/**
+ * Optimized version of getCourseExamCount with caching and retry logic
+ * @function getCourseExamCountOptimized
+ * @param {Course} course - The course.
+ * @returns {Promise<number>} - The total number of exams.
+ */
+async function getCourseExamCountOptimized(course) {
+  const cacheKey = `exam_count_${course.csCourseActiveSeq}`;
+
+  const apiCall = () => new Promise((resolve, reject) => {
+    const request = {
+      csCourseActiveSeq: course.csCourseActiveSeq,
+      csReferenceTypeCd: 'exam',
+      dspMenuId: 'MG0005',
+      dspLinkMenuId: 'MG0005'
+    };
+
+    jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': getCSRFToken()
+      },
+      xhrFields: {
+        withCredentials: true
+      },
+      url: "/course/active/selectAtiveElementList.do",
+      type: "post",
+      data: request,
+      dataType: "json",
+      timeout: 30000,
+      success: function (data) {
+        resolve(data.list.length);
+      },
+      error: function (xhr, status, error) {
+        reject(new Error(`Failed to get exam count: ${error} (${status})`));
+      }
+    });
+  });
+
+  return await cachedApiCall(cacheKey, apiCall);
+}
+
+/**
+ * Optimized version of getCourseCompletion with retry logic
+ * @function getCourseCompletionOptimized
  * @param {string} csCourseActiveSeq - The course active sequence.
  * @param {string} csCourseMasterSeq - The course master sequence.
  * @param {number} count - The number of completion records to return.
  * @returns {Promise<Completion[]>} - The completion records.
- * @throws {Error} - The error that occurred while fetching the completion records.
  */
-function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
+async function getCourseCompletionOptimized(csCourseActiveSeq, csCourseMasterSeq, count) {
   // Function to fetch the completion list
-  function fetchCompletionList() {
-    return new Promise((resolve, reject) => {
-      jQuery.ajax({
-        headers: {
-          'X-CSRF-TOKEN': getCSRFToken()
-        },
-        xhrFields: {
-          withCredentials: true // Include cookies in the request
-        },
-        url: "/course/cmpl/selectCmplList.do",
-        type: "post",
-        data: new CompletionRequest(Number(csCourseActiveSeq), count),
-        dataType: "json",
-        tryCount: 0,
-        retryLimit: 3,
-        success: function (data) {
-          resolve(data.list.map(completion => ({
-            csMemberSeq: completion.csMemberSeq,
-            csMemberId: completion.csMemberId,
-            csMemberName: completion.csMemberName,
-            cxMemberEmail: completion.cxMemberEmail,
-            csApplyStatusCd: completion.csApplyStatusCd,
-            csStudyStartDate: '', // Initially empty
-            csCompletionYn: completion.csCompletionYn,
-            cxCompletionDate: completion.cxCompletionDate
-          })));
-        },
-        error: function (xhr, status, error) {
-          console.log(xhr);
-          this.tryCount++;
-          if (this.tryCount <= this.retryLimit) {
-            jQuery.ajax(this);
-          } else {
-            console.error("Failed to fetch course completion from server!");
-            reject(xhr, status, error);
-          }
-        }
-      });
+  const fetchCompletionList = () => new Promise((resolve, reject) => {
+    jQuery.ajax({
+      headers: {
+        'X-CSRF-TOKEN': getCSRFToken()
+      },
+      xhrFields: {
+        withCredentials: true
+      },
+      url: "/course/cmpl/selectCmplList.do",
+      type: "post",
+      data: new CompletionRequest(Number(csCourseActiveSeq), count),
+      dataType: "json",
+      timeout: 60000, // Longer timeout for completion data
+      success: function (data) {
+        resolve(data.list.map(completion => ({
+          csMemberSeq: completion.csMemberSeq,
+          csMemberId: completion.csMemberId,
+          csMemberName: completion.csMemberName,
+          cxMemberEmail: completion.cxMemberEmail,
+          csApplyStatusCd: completion.csApplyStatusCd,
+          csStudyStartDate: '',
+          csCompletionYn: completion.csCompletionYn,
+          cxCompletionDate: completion.cxCompletionDate
+        })));
+      },
+      error: function (xhr, status, error) {
+        reject(new Error(`Failed to fetch completion list: ${error} (${status})`));
+      }
     });
-  }
+  });
 
   // Function to fetch the study start dates
-  function fetchStudyStartDates() {
-    return new Promise((resolve, reject) => {
-      jQuery.ajax({
-        headers: {
-          'X-CSRF-TOKEN': getCSRFToken()
-        },
-        xhrFields: {
-          withCredentials: true // Include cookies in the request
-        },
-        url: "/course/apply/selectApplyList.do",
-        type: "post",
-        data: new ApplicationRequest(Number(csCourseActiveSeq),
-          Number(csCourseMasterSeq), count),
-        dataType: "json",
-        tryCount: 0,
-        retryLimit: 3,
-        success: function (data) {
-          const startDateMap = new Map();
-          data.list.forEach(apply => {
-            startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
-          });
-          resolve(startDateMap);
-        },
-        error: function (xhr, status, error) {
-          console.log(xhr);
-          this.tryCount++;
-          if (this.tryCount <= this.retryLimit) {
-            jQuery.ajax(this);
-          } else {
-            console.error("Failed to fetch study start dates from server!");
-            reject(xhr, status, error);
-          }
-        }
-      });
-    });
-  }
-
-  // Combine the results of both AJAX calls
-  return Promise.all([fetchCompletionList(), fetchStudyStartDates()])
-    .then(([completionList, startDateMap]) => {
-      // Fill in the missing csStudyStartDate
-      return completionList.map(completion => {
-        return new Completion(
-          completion.csMemberSeq,
-          completion.csMemberId,
-          completion.csMemberName,
-          completion.cxMemberEmail,
-          completion.csApplyStatusCd,
-          startDateMap.get(completion.csMemberSeq) || '', // Use the study start date from the map or default to ''
-          completion.csCompletionYn,
-          completion.cxCompletionDate);
-      });
-    })
-    .catch(error => {
-      console.error('Error fetching course completion:', error);
-      throw error; // Re-throw the error to ensure the promise is rejected
-    });
-}
-
-/**
- * Fetches the total number of course classes for a course.
- * @function getCourseClassCount
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @returns {Promise<number>} - The total number of course classes.
- * @throws {Error} - The error that occurred while fetching the course classes.
- */
-function getCourseClassCount(csCourseActiveSeq) {
-  const request = {
-    csCourseActiveSeq: csCourseActiveSeq,
-    csReferenceTypeCd: 'organization',
-    dspMenuId: 'MG0005',
-    dspLinkMenuId: 'MG0005'
-  }
-  return new Promise((resolve, reject) => {
+  const fetchStudyStartDates = () => new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
         'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
-        withCredentials: true // Include cookies in the request
+        withCredentials: true
       },
-      url: "/course/active/selectAtiveElementList.do",
+      url: "/course/apply/selectApplyList.do",
       type: "post",
-      data: request,
+      data: new ApplicationRequest(Number(csCourseActiveSeq), Number(csCourseMasterSeq), count),
       dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
+      timeout: 60000,
       success: function (data) {
-        resolve(data.list.length);
+        const startDateMap = new Map();
+        data.list.forEach(apply => {
+          startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
+        });
+        resolve(startDateMap);
       },
       error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch class count from server!");
-          reject(xhr, status, error);
-        }
+        reject(new Error(`Failed to fetch study start dates: ${error} (${status})`));
       }
     });
   });
-}
 
-/**
- * Fetches exam information for a course.
- * @function getCourseExamCount
- * @param {Course} course - The course.
- * @returns {Promise<number>} - The total number of exams.
- * @throws {Error} - The error that occurred while fetching the exams.
- */
-function getCourseExamCount(course) {
-  const request = {
-    csCourseActiveSeq: course.csCourseActiveSeq,
-    csReferenceTypeCd: 'exam',
-    dspMenuId: 'MG0005',
-    dspLinkMenuId: 'MG0005'
-  }
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/course/active/selectAtiveElementList.do",
-      type: "post",
-      data: request,
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.list.length);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch class count from server!");
-          reject(xhr, status, error);
-        }
-      }
+  try {
+    // Run both API calls in parallel with retry logic
+    const [completionList, startDateMap] = await Promise.all([
+      apiCallWithRetry(fetchCompletionList),
+      apiCallWithRetry(fetchStudyStartDates)
+    ]);
+
+    // Combine the results
+    return completionList.map(completion => {
+      return new Completion(
+        completion.csMemberSeq,
+        completion.csMemberId,
+        completion.csMemberName,
+        completion.cxMemberEmail,
+        completion.csApplyStatusCd,
+        startDateMap.get(completion.csMemberSeq) || '',
+        completion.csCompletionYn,
+        completion.cxCompletionDate
+      );
     });
-  });
+  } catch (error) {
+    console.error(`Error fetching course completion for ${csCourseActiveSeq}:`, error);
+    throw error;
+  }
 }
 
 /**
- * Fetches the total number of courses from the server.
- * @function getTotalCourseCount
- * @returns {Promise<number>} - The total number of courses.
- * @throws {Error} - Failed to fetch course count from server.
+ * Process a single course with optimized API calls
+ * @param {Course} course - The course to process
+ * @param {number} index - Current course index
+ * @param {number} total - Total number of courses
+ * @returns {Promise<Course>} - The processed course
  */
-function getTotalCourseCount() {
-  return new Promise((resolve, reject) => {
+async function processCourseOptimized(course, index, total) {
+  console.debug(`Processing course [${index + 1}/${total}] ${course.csYear} ${course.csTitle}...`);
+
+  try {
+    // Parallel API calls for course metadata
+    const [classCount, examCount, completionCount] = await Promise.all([
+      getCourseClassCountOptimized(course.csCourseActiveSeq),
+      getCourseExamCountOptimized(course),
+      getCompletionCountOptimized(course.csCourseActiveSeq)
+    ]);
+
+    console.debug(`Course ${course.csCourseActiveSeq}: ${classCount} classes, ${examCount} exams, ${completionCount} completions`);
+
+    course.csCmplTime = classCount + examCount;
+
+    // Fetch completion details
+    const completions = await getCourseCompletionOptimized(
+      course.csCourseActiveSeq,
+      course.csCourseMasterSeq,
+      completionCount
+    );
+
+    course.csCmplList = completions;
+
+    console.debug(`Successfully processed course ${course.csCourseActiveSeq} with ${completions.length} completions`);
+    return course;
+
+  } catch (error) {
+    console.error(`Failed to process course ${course.csCourseActiveSeq} (${course.csTitle}):`, error);
+    // Return course with minimal data rather than failing completely
+    course.csCmplTime = 0;
+    course.csCmplList = [];
+    return course;
+  }
+}
+
+// =============================================================================
+// MAIN OPTIMIZED FUNCTIONS
+// =============================================================================
+
+/**
+ * Optimized version of getTotalCourseCount
+ */
+async function getTotalCourseCountOptimized() {
+  const apiCall = () => new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
         'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
-        withCredentials: true // Include cookies in the request
+        withCredentials: true
       },
       url: "/course/active/selectActiveOperList.do",
       type: "post",
       data: new CourseRequest(),
       dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
+      timeout: 30000,
       success: function (data) {
         resolve(data.cnt);
       },
       error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch course count from server!");
-          reject(xhr, status, error);
-        }
+        reject(new Error(`Failed to fetch course count: ${error} (${status})`));
       }
     });
-  })
+  });
+
+  return await apiCallWithRetry(apiCall);
 }
 
 /**
- * Fetches the courses from the server.
- * @function getCourses
- * @param {number} count - The number of courses to return.
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Failed to fetch courses from server.
+ * Optimized version of getCourses
  */
-function getCourses(count = 10) {
-  return new Promise((resolve, reject) => {
+async function getCoursesOptimized(count = 10) {
+  const apiCall = () => new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
         'X-CSRF-TOKEN': getCSRFToken()
       },
       xhrFields: {
-        withCredentials: true // Include cookies in the request
+        withCredentials: true
       },
       url: "/course/active/selectActiveOperList.do",
       type: "post",
       data: new CourseRequest(count),
       dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
+      timeout: 60000,
       success: function (data) {
-        resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
-          course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
-          course.csCourseTypeCd, course.csYear, course.csApplyStartDate,
-          course.csApplyEndDate, course.csStudyStartDate,
-          course.csStudyEndDate, course.csOpenStartDate, course.csOpenEndDate,
-          null, course.csTitlePath, null)));
+        resolve(data.list.map(course => new Course(
+          course.csCourseActiveSeq,
+          course.csCourseMasterSeq,
+          course.csTitle,
+          course.csStatusCd,
+          course.csCourseTypeCd,
+          course.csYear,
+          course.csApplyStartDate,
+          course.csApplyEndDate,
+          course.csStudyStartDate,
+          course.csStudyEndDate,
+          course.csOpenStartDate,
+          course.csOpenEndDate,
+          null,
+          course.csTitlePath,
+          null
+        )));
       },
       error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch courses from server!");
-          reject(xhr, status, error);
-        }
+        reject(new Error(`Failed to fetch courses: ${error} (${status})`));
       }
     });
   });
+
+  return await apiCallWithRetry(apiCall);
 }
 
 /**
- * Fetch the courses from the server and add them to the database.
- * @function fetchCourses
+ * Optimized version of fetchCourses with parallel processing and caching
+ * @function fetchCoursesOptimized
  * @param {string} action - The action to perform on the courses.
  * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Unknown action.
  */
+async function fetchCoursesOptimized(action) {
+  const startTime = Date.now();
+
+  try {
+    console.log('🚀 Starting optimized course fetching...');
+    console.log(`Configuration: Concurrency=${OPTIMIZATION_CONFIG.CONCURRENCY_LIMIT}, Retries=${OPTIMIZATION_CONFIG.RETRY_ATTEMPTS}, Incremental=${OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED}`);
+
+    // Step 1: Get total course count and course list
+    console.log('📊 Fetching course count and list...');
+    const totalCourseCount = await getTotalCourseCountOptimized();
+    console.log(`Found ${totalCourseCount} courses.`);
+
+    const allCourses = await getCoursesOptimized(totalCourseCount);
+    console.log(`Fetched ${allCourses.length} course records.`);
+
+    // Step 2: Determine which courses need updating (for incremental updates)
+    let coursesToProcess = allCourses;
+    let existingCourses = null;
+
+    if (action === 'update' && OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED) {
+      try {
+        existingCourses = await getData('courses');
+        coursesToProcess = getCoursesToUpdate(allCourses, existingCourses);
+      } catch (error) {
+        console.warn('Could not load existing courses for incremental update, processing all courses:', error.message);
+        coursesToProcess = allCourses;
+      }
+    }
+
+    if (coursesToProcess.length === 0) {
+      console.log('✅ No courses need updating.');
+      return existingCourses || [];
+    }
+
+    console.log(`📚 Processing ${coursesToProcess.length} courses in parallel batches...`);
+
+    // Step 3: Process courses in parallel batches
+    const processedCourses = await processInBatches(
+      coursesToProcess,
+      OPTIMIZATION_CONFIG.CONCURRENCY_LIMIT,
+      processCourseOptimized,
+      startTime
+    );
+
+    console.log(`✅ Successfully processed ${processedCourses.length} courses.`);
+
+    // Step 4: Merge with existing data for incremental updates
+    let finalCourses = processedCourses;
+
+    if (action === 'update' && existingCourses && OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED) {
+      console.log('🔄 Merging with existing course data...');
+
+      const processedMap = new Map(
+        processedCourses.map(course => [course.csCourseActiveSeq, course])
+      );
+
+      finalCourses = existingCourses.map(existingCourse =>
+        processedMap.get(existingCourse.csCourseActiveSeq) || existingCourse
+      );
+
+      // Add any completely new courses
+      processedCourses.forEach(course => {
+        if (!existingCourses.some(existing => existing.csCourseActiveSeq === course.csCourseActiveSeq)) {
+          finalCourses.push(course);
+        }
+      });
+
+      console.log(`Merged data: ${finalCourses.length} total courses.`);
+    }
+
+    // Step 5: Save to database
+    if (action === 'add') {
+      console.log('💾 Adding courses to database...');
+      await addData('courses', finalCourses);
+      console.log(`Successfully added ${finalCourses.length} courses to database.`);
+    } else if (action === 'update') {
+      console.log('💾 Updating courses in database...');
+      await updateData('courses', finalCourses);
+      console.log(`Successfully updated ${finalCourses.length} courses in database.`);
+    } else {
+      throw new Error(`Unknown action: ${action}`);
+    }
+
+    // Step 6: Performance summary
+    const endTime = Date.now();
+    const duration = (endTime - startTime) / 1000;
+    const avgTime = duration / coursesToProcess.length;
+
+    console.log(`🎉 Optimization complete!`);
+    console.log(`⏱️  Total time: ${duration.toFixed(2)}s`);
+    console.log(`📈 Average time per course: ${avgTime.toFixed(3)}s`);
+    console.log(`🗂️  Cache size: ${apiCache.size} entries`);
+
+    return finalCourses;
+
+  } catch (error) {
+    console.error('❌ Failed to fetch courses:', error);
+    throw error;
+  } finally {
+    // Clean up old cache entries periodically
+    if (apiCache.size > 1000) {
+      console.log('🧹 Cleaning up old cache entries...');
+      const now = Date.now();
+      let cleanedCount = 0;
+
+      for (const [key, value] of apiCache.entries()) {
+        if (now - value.timestamp > OPTIMIZATION_CONFIG.CACHE_TTL) {
+          apiCache.delete(key);
+          cleanedCount++;
+        }
+      }
+
+      console.log(`Cleaned ${cleanedCount} expired cache entries.`);
+    }
+  }
+}
+
+/**
+ * Optimized version of addCourses
+ * @function addCoursesOptimized
+ * @returns {Promise<Course[]>} - The courses.
+ */
+async function addCoursesOptimized() {
+  return await fetchCoursesOptimized('add');
+}
+
+/**
+ * Optimized version of updateCourses
+ * @function updateCoursesOptimized
+ * @returns {Promise<Course[]>} - The courses.
+ */
+async function updateCoursesOptimized() {
+  return await fetchCoursesOptimized('update');
+}
+
+// =============================================================================
+// BACKWARD COMPATIBILITY AND UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * Legacy functions maintained for backward compatibility
+ */
+function getCompletionCount(csCourseActiveSeq) {
+  return getCompletionCountOptimized(csCourseActiveSeq);
+}
+
+function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
+  return getCourseCompletionOptimized(csCourseActiveSeq, csCourseMasterSeq, count);
+}
+
+function getCourseClassCount(csCourseActiveSeq) {
+  return getCourseClassCountOptimized(csCourseActiveSeq);
+}
+
+function getCourseExamCount(course) {
+  return getCourseExamCountOptimized(course);
+}
+
+function getTotalCourseCount() {
+  return getTotalCourseCountOptimized();
+}
+
+function getCourses(count = 10) {
+  return getCoursesOptimized(count);
+}
+
 async function fetchCourses(action) {
-  console.log('Fetching count of courses...')
-  const totalCourseCount = await getTotalCourseCount();
-  console.log(`Found ${totalCourseCount} courses.`)
-
-  console.log('Fetching courses...')
-  const courses = await getCourses(totalCourseCount);
-  console.log(`Fetched ${courses.length} courses.`)
-
-  var started = Date.now();
-  for (let i = 0; i < courses.length; i++) {
-    estimatedProgressTime(i, courses.length, started, '과정');
-    const course = courses[i];
-    console.log(`Processing course [${i
-      + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
-
-    console.debug(
-      `Fetching class count for course ${course.csCourseActiveSeq}...`)
-    const classCount = await getCourseClassCount(course.csCourseActiveSeq);
-    const examCount = await getCourseExamCount(course);
-    console.debug(
-      `Found ${classCount} classes for course ${course.csCourseActiveSeq}.`)
-    console.debug(
-      `Found ${examCount} exams for course ${course.csCourseActiveSeq}.`)
-    course.csCmplTime = classCount + examCount;
-
-    console.debug(
-      `Fetching completion count for course ${course.csCourseActiveSeq}...`)
-    const completionCount = await getCompletionCount(course.csCourseActiveSeq);
-    console.debug(
-      `Found ${completionCount} completion records for course ${course.csCourseActiveSeq}.`)
-
-    console.debug(
-      `Fetching completions for course ${course.csCourseActiveSeq}...`)
-    const completions = await getCourseCompletion(course.csCourseActiveSeq,
-      course.csCourseMasterSeq,
-      completionCount);
-    console.debug(
-      `Fetched ${completions.length} completions for course ${course.csCourseActiveSeq}.`)
-    course.csCmplList = completions;
-  }
-  console.log(`Processed ${courses.length} courses.`)
-
-  if (action === 'add') {
-    console.log('Adding courses to database...')
-    await addData('courses', courses);
-    console.log(`Successfully added ${courses.length} courses to database.`)
-  } else if (action === 'update') {
-    console.log('Updating courses in database...')
-    await updateData('courses', courses);
-    console.log(`Successfully updated ${courses.length} courses in database.`)
-  } else {
-    throw new Error(`Unknown action: ${action}`);
-  }
-
-  return courses;
+  return await fetchCoursesOptimized(action);
 }
 
-/**
- * Fetches the courses from the server and adds them to the database.
- * @function addCourses
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Failed to add courses to database.
- */
 async function addCourses() {
-  return await fetchCourses('add');
+  return await addCoursesOptimized();
 }
 
 /**
- * Fetches the courses from the server and updates them in the database.
- * @function updateCourses
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Failed to update courses in database.
+ * Cache management utilities
  */
-async function updateCourses() {
-  return await fetchCourses('update');
+function clearApiCache() {
+  const size = apiCache.size;
+  apiCache.clear();
+  console.log(`Cleared ${size} cache entries.`);
+}
+
+function getCacheStats() {
+  const now = Date.now();
+  let validEntries = 0;
+  let expiredEntries = 0;
+
+  for (const [key, value] of apiCache.entries()) {
+    if (now - value.timestamp < OPTIMIZATION_CONFIG.CACHE_TTL) {
+      validEntries++;
+    } else {
+      expiredEntries++;
+    }
+  }
+
+  return {
+    total: apiCache.size,
+    valid: validEntries,
+    expired: expiredEntries,
+    cacheHitRate: '(not tracked)'
+  };
+}
+
+function updateOptimizationConfig(newConfig) {
+  Object.assign(OPTIMIZATION_CONFIG, newConfig);
+  console.log('Updated optimization configuration:', OPTIMIZATION_CONFIG);
 }
 
 /**
- * Checks if a course is a custom course with a specific keyword.
- * @param {Course} course
- * @param {string} keyword
- * @returns {boolean}
+ * Utility functions that remain unchanged
  */
 function isCustomCourse(course, keyword) {
   return course.csTitle.includes(keyword) && course.csTitlePath === '맞춤형';
 }
 
-async function searchCustomCourses(input = '',
-  year = new Date().getFullYear()) {
-  // Get all courses from the database
+async function searchCustomCourses(input = '', year = new Date().getFullYear()) {
   const exist = await getData('courses');
   if (!exist) {
-    await addCourses();
+    await addCoursesOptimized();
   }
   const courses = await getData('courses');
   customTable(courses);
   console.log(`Found ${courses.length} courses in the database.`);
 
-  // Split the search keywords
   const keywords = input.split(' ');
-
-  // Search for courses that match the search criteria
   const results = [];
   for (const course of courses) {
     for (const keyword of keywords) {
-      // Search for course's attributes that match the keyword
       if (isCustomCourse(course, keyword) && course.csYear === year) {
         results.push(course);
         break;
@@ -684,34 +1015,22 @@ async function searchCustomCourses(input = '',
     }
   }
 
-  // Table the search results
   customTable(results);
-  console.log(
-    `Found ${results.length} courses that match the search criteria.`);
-
-  // Return the search results
+  console.log(`Found ${results.length} courses that match the search criteria.`);
   return results;
 }
 
-export async function searchCourses(input = '',
-  year = new Date().getFullYear()) {
-  // Get all courses from the database
+export async function searchCourses(input = '', year = new Date().getFullYear()) {
   const exist = await getData('courses');
   if (!exist) {
-    await addCourses();
+    await addCoursesOptimized();
   }
   const courses = await getData('courses');
-  // customTable(courses);
-  // console.log(`Found ${courses.length} courses in the database.`);
 
-  // Split the search keywords
   const keywords = input.split(' ');
-
-  // Search for courses that match the search criteria
   const results = [];
   for (const course of courses) {
     for (const keyword of keywords) {
-      // Search for course's attributes that match the keyword
       if (course.csTitle.includes(keyword) && course.csYear >= year) {
         results.push(course);
         break;
@@ -719,12 +1038,16 @@ export async function searchCourses(input = '',
     }
   }
 
-  // Table the search results
-  // customTable(results);
-  // console.log(`Found ${results.length} courses that match the search criteria.`);
-
-  // Return the search results
   return results;
 }
 
-export { updateCourses };
+// Export the optimized function as the main updateCourses function
+export const updateCourses = updateCoursesOptimized;
+
+// Export utility functions for advanced users
+export {
+  clearApiCache,
+  getCacheStats,
+  updateOptimizationConfig,
+  OPTIMIZATION_CONFIG
+};
