@@ -404,7 +404,43 @@ export async function addCoursesEnhanced() {
   return await fetchCoursesEnhanced('add');
 }
 
-// Also export original functions for backward compatibility
+/**
+ * Search for courses by keyword and year (original function preserved)
+ */
+export async function searchCourses(input = '', year = new Date().getFullYear()) {
+  // Get all courses from the database
+  const exist = await getData('courses');
+  if (!exist) {
+    await addCoursesEnhanced();
+  }
+  const courses = await getData('courses');
+
+  // Split the search keywords
+  const keywords = input.split(' ');
+
+  // Search for courses that match the search criteria
+  const results = [];
+  for (const course of courses) {
+    for (const keyword of keywords) {
+      // Search for course's attributes that match the keyword
+      if (course.csTitle.includes(keyword) && course.csYear >= year) {
+        results.push(course);
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Legacy function calls for backward compatibility
+ */
+async function addCourses() {
+  return await addCoursesEnhanced();
+}
+
+// Main exported functions - using enhanced versions with original names
 export async function updateCourses() {
   console.log('Using enhanced course update with rate limiting...');
   return await updateCoursesEnhanced();
