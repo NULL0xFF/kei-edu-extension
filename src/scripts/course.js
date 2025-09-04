@@ -242,76 +242,392 @@ class CourseRequest {
 }
 
 // =============================================================================
-// OPTIMIZATION UTILITIES
+// NETWORK RESILIENCE AND CONNECTION MANAGEMENT
 // =============================================================================
 
 /**
- * Global cache for API responses to avoid duplicate requests
+ * Network resilience configuration
  */
-const apiCache = new Map();
+const NETWORK_CONFIG = {
+  // Basic settings
+  INITIAL_CONCURRENCY: 2,           // Start conservative
+  MAX_CONCURRENCY: 8,               // Maximum concurrent requests
+  MIN_CONCURRENCY: 1,               // Minimum concurrent requests
 
-/**
- * Configuration for optimization settings
- */
-const OPTIMIZATION_CONFIG = {
-  CONCURRENCY_LIMIT: 5, // Number of concurrent API calls
-  RETRY_ATTEMPTS: 3, // Number of retry attempts for failed calls
-  BATCH_DELAY: 100, // Delay between batches in milliseconds
-  CACHE_TTL: 5 * 60 * 1000, // Cache TTL in milliseconds (5 minutes)
-  INCREMENTAL_UPDATE_ENABLED: true // Enable incremental updates
+  // Timeout settings
+  BASE_TIMEOUT: 15000,              // Base timeout (15s)
+  MAX_TIMEOUT: 60000,               // Maximum timeout (60s)
+  LONG_OPERATION_TIMEOUT: 120000,   // For completion data (2 minutes)
+
+  // Retry and backoff
+  MAX_RETRIES: 5,                   // Maximum retry attempts
+  INITIAL_BACKOFF: 1000,            // Initial backoff (1s)
+  MAX_BACKOFF: 30000,               // Maximum backoff (30s)
+  BACKOFF_MULTIPLIER: 1.5,          // Backoff multiplier
+  JITTER_FACTOR: 0.1,               // Add randomization to prevent thundering herd
+
+  // Circuit breaker
+  ERROR_THRESHOLD: 0.3,             // Error rate threshold (30%)
+  RECOVERY_TIMEOUT: 60000,          // Time to wait before recovery attempt (60s)
+  SAMPLE_SIZE: 10,                  // Sample size for error rate calculation
+
+  // Rate limiting
+  ADAPTIVE_RATE_LIMITING: true,     // Enable adaptive rate limiting
+  RATE_LIMIT_WINDOW: 10000,         // Rate limit window (10s)
+  SUCCESS_RATE_THRESHOLD: 0.8,      // Success rate threshold for increasing concurrency
+
+  // Connection management  
+  KEEP_ALIVE: true,                 // Use keep-alive connections
+  CONNECTION_POOL_SIZE: 10,         // Connection pool size
+  IDLE_TIMEOUT: 30000,              // Connection idle timeout
+
+  // Batching
+  BATCH_DELAY_MIN: 200,             // Minimum delay between batches
+  BATCH_DELAY_MAX: 2000,            // Maximum delay between batches
+  ADAPTIVE_BATCH_DELAY: true,       // Adapt batch delay based on performance
+
+  // Cache
+  CACHE_TTL: 10 * 60 * 1000,        // 10 minutes cache TTL
+
+  // Health monitoring
+  HEALTH_CHECK_INTERVAL: 30000,     // Health check interval (30s)
+  PERFORMANCE_MONITORING: true,     // Enable performance monitoring
 };
 
 /**
- * Enhanced API call with retry logic and exponential backoff
- * @param {Function} apiFunction - The API function to call
- * @param {Array} args - Arguments to pass to the API function
- * @param {number} maxRetries - Maximum number of retries
- * @returns {Promise} - Promise resolving to the API response
+ * Global state for network management
  */
-async function apiCallWithRetry(apiFunction, args = [], maxRetries = OPTIMIZATION_CONFIG.RETRY_ATTEMPTS) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await apiFunction(...args);
-    } catch (error) {
-      if (attempt === maxRetries) {
-        console.error(`API call failed after ${maxRetries + 1} attempts:`, error);
-        throw error;
-      }
+const NetworkState = {
+  currentConcurrency: NETWORK_CONFIG.INITIAL_CONCURRENCY,
+  circuitBreakerOpen: false,
+  circuitBreakerOpenTime: 0,
+  recentRequests: [],
+  performanceMetrics: {
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    timeoutRequests: 0,
+    avgResponseTime: 0,
+    lastResponseTimes: []
+  },
+  activeConnections: 0,
+  rateLimitTokens: NETWORK_CONFIG.MAX_CONCURRENCY,
+  lastTokenRefill: Date.now(),
+  healthStatus: 'healthy', // 'healthy', 'degraded', 'unhealthy'
+  adaptiveBatchDelay: NETWORK_CONFIG.BATCH_DELAY_MIN
+};
 
-      // Exponential backoff: 1s, 2s, 4s delays
-      const delay = Math.pow(2, attempt) * 1000;
-      console.warn(`API call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, error.message);
-      await new Promise(resolve => setTimeout(resolve, delay));
+/**
+ * Global cache for API responses
+ */
+const apiCache = new Map();
+
+// =============================================================================
+// CIRCUIT BREAKER PATTERN
+// =============================================================================
+
+/**
+ * Circuit Breaker implementation
+ */
+class CircuitBreaker {
+  static isOpen() {
+    if (!NetworkState.circuitBreakerOpen) return false;
+
+    const timeSinceOpen = Date.now() - NetworkState.circuitBreakerOpenTime;
+    if (timeSinceOpen > NETWORK_CONFIG.RECOVERY_TIMEOUT) {
+      console.log('🔧 Circuit breaker attempting recovery...');
+      NetworkState.circuitBreakerOpen = false;
+      NetworkState.currentConcurrency = 1; // Start with minimal concurrency
+      return false;
     }
+
+    return true;
+  }
+
+  static recordSuccess() {
+    NetworkState.recentRequests.push({ success: true, timestamp: Date.now() });
+    this.cleanup();
+    NetworkState.performanceMetrics.successfulRequests++;
+  }
+
+  static recordFailure(isTimeout = false) {
+    NetworkState.recentRequests.push({ success: false, timestamp: Date.now(), timeout: isTimeout });
+    this.cleanup();
+
+    NetworkState.performanceMetrics.failedRequests++;
+    if (isTimeout) {
+      NetworkState.performanceMetrics.timeoutRequests++;
+    }
+
+    this.checkThreshold();
+  }
+
+  static cleanup() {
+    const cutoff = Date.now() - NETWORK_CONFIG.RATE_LIMIT_WINDOW;
+    NetworkState.recentRequests = NetworkState.recentRequests.filter(req => req.timestamp > cutoff);
+  }
+
+  static checkThreshold() {
+    if (NetworkState.recentRequests.length < NETWORK_CONFIG.SAMPLE_SIZE) return;
+
+    const failures = NetworkState.recentRequests.filter(req => !req.success).length;
+    const errorRate = failures / NetworkState.recentRequests.length;
+
+    if (errorRate > NETWORK_CONFIG.ERROR_THRESHOLD && !NetworkState.circuitBreakerOpen) {
+      console.warn(`⚠️ Circuit breaker opened! Error rate: ${(errorRate * 100).toFixed(1)}%`);
+      NetworkState.circuitBreakerOpen = true;
+      NetworkState.circuitBreakerOpenTime = Date.now();
+      NetworkState.currentConcurrency = 1;
+    }
+  }
+
+  static getStats() {
+    this.cleanup();
+    const total = NetworkState.recentRequests.length;
+    const failures = NetworkState.recentRequests.filter(req => !req.success).length;
+    const timeouts = NetworkState.recentRequests.filter(req => req.timeout).length;
+
+    return {
+      isOpen: this.isOpen(),
+      errorRate: total > 0 ? failures / total : 0,
+      timeoutRate: total > 0 ? timeouts / total : 0,
+      sampleSize: total
+    };
+  }
+}
+
+// =============================================================================
+// ADAPTIVE RATE LIMITING
+// =============================================================================
+
+/**
+ * Adaptive Rate Limiter
+ */
+class RateLimiter {
+  static async acquireToken() {
+    await this.refillTokens();
+
+    if (CircuitBreaker.isOpen()) {
+      throw new Error('Circuit breaker is open');
+    }
+
+    if (NetworkState.rateLimitTokens <= 0) {
+      const waitTime = this.getWaitTime();
+      console.log(`⏳ Rate limit reached, waiting ${waitTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      return this.acquireToken(); // Recursive retry
+    }
+
+    NetworkState.rateLimitTokens--;
+    NetworkState.activeConnections++;
+    return true;
+  }
+
+  static releaseToken() {
+    NetworkState.activeConnections = Math.max(0, NetworkState.activeConnections - 1);
+  }
+
+  static async refillTokens() {
+    const now = Date.now();
+    const timePassed = now - NetworkState.lastTokenRefill;
+
+    if (timePassed >= 1000) { // Refill every second
+      const tokensToAdd = Math.floor(timePassed / 1000) * this.getRefillRate();
+      NetworkState.rateLimitTokens = Math.min(
+        NetworkState.currentConcurrency,
+        NetworkState.rateLimitTokens + tokensToAdd
+      );
+      NetworkState.lastTokenRefill = now;
+    }
+  }
+
+  static getRefillRate() {
+    const stats = CircuitBreaker.getStats();
+
+    if (stats.isOpen) return 0;
+    if (stats.errorRate > 0.2) return 1; // Slow refill on high errors
+    if (stats.errorRate < 0.1) return NetworkState.currentConcurrency; // Fast refill on low errors
+
+    return Math.ceil(NetworkState.currentConcurrency / 2); // Medium refill
+  }
+
+  static getWaitTime() {
+    const baseWait = 1000;
+    const backoffMultiplier = Math.pow(2, Math.min(5, NetworkState.performanceMetrics.failedRequests / 10));
+    return baseWait * backoffMultiplier + (Math.random() * 500); // Add jitter
+  }
+
+  static adaptConcurrency() {
+    if (!NETWORK_CONFIG.ADAPTIVE_RATE_LIMITING) return;
+
+    const stats = CircuitBreaker.getStats();
+    const currentSuccessRate = 1 - stats.errorRate;
+    const avgResponseTime = this.getAverageResponseTime();
+
+    const oldConcurrency = NetworkState.currentConcurrency;
+
+    // Increase concurrency if performance is good
+    if (currentSuccessRate > NETWORK_CONFIG.SUCCESS_RATE_THRESHOLD && avgResponseTime < 5000) {
+      NetworkState.currentConcurrency = Math.min(
+        NETWORK_CONFIG.MAX_CONCURRENCY,
+        NetworkState.currentConcurrency + 1
+      );
+    }
+    // Decrease concurrency if performance is poor
+    else if (currentSuccessRate < 0.7 || avgResponseTime > 15000 || stats.timeoutRate > 0.1) {
+      NetworkState.currentConcurrency = Math.max(
+        NETWORK_CONFIG.MIN_CONCURRENCY,
+        NetworkState.currentConcurrency - 1
+      );
+    }
+
+    if (oldConcurrency !== NetworkState.currentConcurrency) {
+      console.log(`📈 Adapted concurrency: ${oldConcurrency} → ${NetworkState.currentConcurrency} (success rate: ${(currentSuccessRate * 100).toFixed(1)}%, avg response: ${avgResponseTime.toFixed(0)}ms)`);
+    }
+  }
+
+  static getAverageResponseTime() {
+    const times = NetworkState.performanceMetrics.lastResponseTimes;
+    if (times.length === 0) return 0;
+    return times.reduce((sum, time) => sum + time, 0) / times.length;
+  }
+}
+
+// =============================================================================
+// ROBUST API CALL INFRASTRUCTURE
+// =============================================================================
+
+/**
+ * Enhanced AJAX call with network resilience features
+ */
+async function robustApiCall(options) {
+  const startTime = Date.now();
+  let lastError = null;
+
+  // Acquire rate limiting token
+  await RateLimiter.acquireToken();
+
+  try {
+    for (let attempt = 0; attempt <= NETWORK_CONFIG.MAX_RETRIES; attempt++) {
+      try {
+        // Calculate adaptive timeout
+        const timeout = Math.min(
+          NETWORK_CONFIG.MAX_TIMEOUT,
+          NETWORK_CONFIG.BASE_TIMEOUT * Math.pow(1.5, attempt)
+        );
+
+        // Add jitter to prevent thundering herd
+        if (attempt > 0) {
+          const jitter = Math.random() * NETWORK_CONFIG.JITTER_FACTOR * 1000;
+          const backoffTime = Math.min(
+            NETWORK_CONFIG.MAX_BACKOFF,
+            NETWORK_CONFIG.INITIAL_BACKOFF * Math.pow(NETWORK_CONFIG.BACKOFF_MULTIPLIER, attempt - 1)
+          );
+
+          console.debug(`⏳ Retry ${attempt}/${NETWORK_CONFIG.MAX_RETRIES} after ${backoffTime + jitter}ms for ${options.url}`);
+          await new Promise(resolve => setTimeout(resolve, backoffTime + jitter));
+        }
+
+        // Execute the API call
+        const result = await new Promise((resolve, reject) => {
+          const ajaxOptions = {
+            ...options,
+            timeout,
+            headers: {
+              'X-CSRF-TOKEN': getCSRFToken(),
+              'Connection': NETWORK_CONFIG.KEEP_ALIVE ? 'keep-alive' : 'close',
+              ...options.headers
+            },
+            xhrFields: {
+              withCredentials: true,
+              ...options.xhrFields
+            },
+            success: function (data) {
+              resolve(data);
+            },
+            error: function (xhr, status, error) {
+              reject(new Error(`${error} (${status}) - ${xhr.status || 'No status'}`));
+            }
+          };
+
+          jQuery.ajax(ajaxOptions);
+        });
+
+        // Record success metrics
+        const responseTime = Date.now() - startTime;
+        NetworkState.performanceMetrics.totalRequests++;
+        NetworkState.performanceMetrics.lastResponseTimes.push(responseTime);
+
+        // Keep only recent response times
+        if (NetworkState.performanceMetrics.lastResponseTimes.length > 50) {
+          NetworkState.performanceMetrics.lastResponseTimes =
+            NetworkState.performanceMetrics.lastResponseTimes.slice(-25);
+        }
+
+        CircuitBreaker.recordSuccess();
+        RateLimiter.adaptConcurrency();
+
+        return result;
+
+      } catch (error) {
+        lastError = error;
+        const isTimeout = error.message.includes('timeout') || error.message.includes('TIMEOUT');
+        const isConnectionError = error.message.includes('CONNECTION') || error.message.includes('NETWORK');
+
+        NetworkState.performanceMetrics.totalRequests++;
+        CircuitBreaker.recordFailure(isTimeout);
+
+        // Don't retry on certain types of errors
+        if (error.message.includes('404') || error.message.includes('401') || error.message.includes('403')) {
+          console.error(`❌ Non-retryable error for ${options.url}:`, error.message);
+          break;
+        }
+
+        // Log different types of errors
+        if (isTimeout) {
+          console.warn(`⏱️ Timeout on attempt ${attempt + 1} for ${options.url}`);
+        } else if (isConnectionError) {
+          console.warn(`🔌 Connection error on attempt ${attempt + 1} for ${options.url}:`, error.message);
+        } else {
+          console.warn(`❌ Error on attempt ${attempt + 1} for ${options.url}:`, error.message);
+        }
+
+        // Don't retry on the last attempt
+        if (attempt === NETWORK_CONFIG.MAX_RETRIES) {
+          break;
+        }
+      }
+    }
+
+    // If we get here, all retries failed
+    throw lastError || new Error('All retry attempts failed');
+
+  } finally {
+    RateLimiter.releaseToken();
   }
 }
 
 /**
- * Cached API call to avoid duplicate requests
- * @param {string} cacheKey - Unique key for caching
- * @param {Function} apiFunction - The API function to call
- * @param {Array} args - Arguments to pass to the API function
- * @returns {Promise} - Promise resolving to the API response
+ * Cached API call with network resilience
  */
-async function cachedApiCall(cacheKey, apiFunction, args = []) {
-  // Check if result is in cache and not expired
+async function cachedRobustApiCall(cacheKey, options) {
+  // Check cache first
   if (apiCache.has(cacheKey)) {
     const cachedResult = apiCache.get(cacheKey);
     const now = Date.now();
 
-    if (now - cachedResult.timestamp < OPTIMIZATION_CONFIG.CACHE_TTL) {
-      console.debug(`Cache hit for key: ${cacheKey}`);
+    if (now - cachedResult.timestamp < NETWORK_CONFIG.CACHE_TTL) {
+      console.debug(`💾 Cache hit for ${cacheKey}`);
       return cachedResult.data;
     } else {
-      // Remove expired cache entry
       apiCache.delete(cacheKey);
     }
   }
 
-  console.debug(`Cache miss for key: ${cacheKey}, making API call`);
-  const result = await apiCallWithRetry(apiFunction, args);
+  console.debug(`🌐 Making API call for ${cacheKey}`);
+  const result = await robustApiCall(options);
 
-  // Store result in cache with timestamp
+  // Cache the result
   apiCache.set(cacheKey, {
     data: result,
     timestamp: Date.now()
@@ -320,320 +636,118 @@ async function cachedApiCall(cacheKey, apiFunction, args = []) {
   return result;
 }
 
-/**
- * Process items in parallel batches with concurrency control
- * @param {Array} items - Items to process
- * @param {number} concurrencyLimit - Maximum number of concurrent operations
- * @param {Function} processor - Function to process each item
- * @param {number} startTime - Start time for progress tracking
- * @returns {Promise<Array>} - Promise resolving to processed results
- */
-async function processInBatches(items, concurrencyLimit, processor, startTime) {
-  const results = [];
-  let completed = 0;
-
-  console.log(`Processing ${items.length} items in batches of ${concurrencyLimit}`);
-
-  for (let i = 0; i < items.length; i += concurrencyLimit) {
-    const batch = items.slice(i, i + concurrencyLimit);
-    console.debug(`Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(items.length / concurrencyLimit)}`);
-
-    const batchPromises = batch.map(async (item, batchIndex) => {
-      try {
-        const result = await processor(item, i + batchIndex, items.length);
-        completed++;
-
-        // Update progress
-        if (startTime) {
-          estimatedProgressTime(completed, items.length, startTime, '과정');
-        }
-
-        return { success: true, data: result, index: i + batchIndex };
-      } catch (error) {
-        console.error(`Failed to process item ${i + batchIndex} (${item.csTitle || item.csCourseActiveSeq}):`, error);
-        completed++;
-
-        // Update progress even for failed items
-        if (startTime) {
-          estimatedProgressTime(completed, items.length, startTime, '과정');
-        }
-
-        return { success: false, error: error, index: i + batchIndex, item };
-      }
-    });
-
-    const batchResults = await Promise.allSettled(batchPromises);
-
-    // Process batch results
-    batchResults.forEach((result, batchIndex) => {
-      if (result.status === 'fulfilled') {
-        if (result.value.success) {
-          results.push(result.value.data);
-        } else {
-          console.warn(`Item ${result.value.index} failed:`, result.value.error.message);
-        }
-      } else {
-        console.error(`Batch processing failed for item ${i + batchIndex}:`, result.reason);
-      }
-    });
-
-    // Add delay between batches to be server-friendly
-    if (i + concurrencyLimit < items.length && OPTIMIZATION_CONFIG.BATCH_DELAY > 0) {
-      await new Promise(resolve => setTimeout(resolve, OPTIMIZATION_CONFIG.BATCH_DELAY));
-    }
-  }
-
-  const successCount = results.length;
-  const failureCount = items.length - successCount;
-
-  if (failureCount > 0) {
-    console.warn(`Batch processing completed: ${successCount} succeeded, ${failureCount} failed`);
-  } else {
-    console.log(`Batch processing completed successfully: ${successCount} items processed`);
-  }
-
-  return results;
-}
-
-/**
- * Check if a course has changed compared to existing data
- * @param {Course} newCourse - New course data
- * @param {Course} existingCourse - Existing course data
- * @returns {boolean} - True if course has changed
- */
-function hasChanged(newCourse, existingCourse) {
-  const fieldsToCheck = [
-    'csStatusCd',
-    'csStudyEndDate',
-    'csOpenEndDate',
-    'csCourseTypeCd'
-  ];
-
-  return fieldsToCheck.some(field =>
-    newCourse[field] !== existingCourse[field]
-  );
-}
-
-/**
- * Get courses that need to be updated
- * @param {Array} allCourses - All courses from API
- * @param {Array} existingCourses - Existing courses from database
- * @returns {Array} - Courses that need to be updated
- */
-function getCoursesToUpdate(allCourses, existingCourses) {
-  if (!OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED || !existingCourses || existingCourses.length === 0) {
-    return allCourses;
-  }
-
-  const existingMap = new Map(
-    existingCourses.map(course => [course.csCourseActiveSeq, course])
-  );
-
-  const coursesToUpdate = allCourses.filter(course => {
-    const existing = existingMap.get(course.csCourseActiveSeq);
-    return !existing || hasChanged(course, existing);
-  });
-
-  console.log(`Incremental update: ${coursesToUpdate.length} of ${allCourses.length} courses need updating`);
-  return coursesToUpdate;
-}
-
 // =============================================================================
-// OPTIMIZED API FUNCTIONS
+// OPTIMIZED API FUNCTIONS WITH NETWORK RESILIENCE
 // =============================================================================
 
 /**
- * Optimized version of getCompletionCount with caching and retry logic
- * @function getCompletionCountOptimized
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @returns {Promise<number>} - The total number of completion records.
+ * Network-resilient version of getCompletionCount
  */
-async function getCompletionCountOptimized(csCourseActiveSeq) {
+async function getCompletionCountResilient(csCourseActiveSeq) {
   const cacheKey = `completion_count_${csCourseActiveSeq}`;
 
-  const apiCall = () => new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
-      url: "/course/cmpl/selectCmplList.do",
-      type: "post",
-      data: new CompletionRequest(csCourseActiveSeq),
-      dataType: "json",
-      timeout: 30000, // 30 second timeout
-      success: function (data) {
-        resolve(data.cnt);
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to get completion count: ${error} (${status})`));
-      }
-    });
-  });
-
-  return await cachedApiCall(cacheKey, apiCall);
+  return await cachedRobustApiCall(cacheKey, {
+    url: "/course/cmpl/selectCmplList.do",
+    type: "post",
+    data: new CompletionRequest(csCourseActiveSeq),
+    dataType: "json"
+  }).then(data => data.cnt);
 }
 
 /**
- * Optimized version of getCourseClassCount with caching and retry logic
- * @function getCourseClassCountOptimized
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @returns {Promise<number>} - The total number of course classes.
+ * Network-resilient version of getCourseClassCount
  */
-async function getCourseClassCountOptimized(csCourseActiveSeq) {
+async function getCourseClassCountResilient(csCourseActiveSeq) {
   const cacheKey = `class_count_${csCourseActiveSeq}`;
 
-  const apiCall = () => new Promise((resolve, reject) => {
-    const request = {
-      csCourseActiveSeq: csCourseActiveSeq,
-      csReferenceTypeCd: 'organization',
-      dspMenuId: 'MG0005',
-      dspLinkMenuId: 'MG0005'
-    };
+  const request = {
+    csCourseActiveSeq: csCourseActiveSeq,
+    csReferenceTypeCd: 'organization',
+    dspMenuId: 'MG0005',
+    dspLinkMenuId: 'MG0005'
+  };
 
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
-      url: "/course/active/selectAtiveElementList.do",
-      type: "post",
-      data: request,
-      dataType: "json",
-      timeout: 30000,
-      success: function (data) {
-        resolve(data.list.length);
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to get class count: ${error} (${status})`));
-      }
-    });
-  });
-
-  return await cachedApiCall(cacheKey, apiCall);
+  return await cachedRobustApiCall(cacheKey, {
+    url: "/course/active/selectAtiveElementList.do",
+    type: "post",
+    data: request,
+    dataType: "json"
+  }).then(data => data.list.length);
 }
 
 /**
- * Optimized version of getCourseExamCount with caching and retry logic
- * @function getCourseExamCountOptimized
- * @param {Course} course - The course.
- * @returns {Promise<number>} - The total number of exams.
+ * Network-resilient version of getCourseExamCount
  */
-async function getCourseExamCountOptimized(course) {
+async function getCourseExamCountResilient(course) {
   const cacheKey = `exam_count_${course.csCourseActiveSeq}`;
 
-  const apiCall = () => new Promise((resolve, reject) => {
-    const request = {
-      csCourseActiveSeq: course.csCourseActiveSeq,
-      csReferenceTypeCd: 'exam',
-      dspMenuId: 'MG0005',
-      dspLinkMenuId: 'MG0005'
-    };
+  const request = {
+    csCourseActiveSeq: course.csCourseActiveSeq,
+    csReferenceTypeCd: 'exam',
+    dspMenuId: 'MG0005',
+    dspLinkMenuId: 'MG0005'
+  };
 
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
-      url: "/course/active/selectAtiveElementList.do",
-      type: "post",
-      data: request,
-      dataType: "json",
-      timeout: 30000,
-      success: function (data) {
-        resolve(data.list.length);
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to get exam count: ${error} (${status})`));
-      }
-    });
-  });
-
-  return await cachedApiCall(cacheKey, apiCall);
+  return await cachedRobustApiCall(cacheKey, {
+    url: "/course/active/selectAtiveElementList.do",
+    type: "post",
+    data: request,
+    dataType: "json"
+  }).then(data => data.list.length);
 }
 
 /**
- * Optimized version of getCourseCompletion with retry logic
- * @function getCourseCompletionOptimized
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @param {string} csCourseMasterSeq - The course master sequence.
- * @param {number} count - The number of completion records to return.
- * @returns {Promise<Completion[]>} - The completion records.
+ * Network-resilient version of getCourseCompletion
  */
-async function getCourseCompletionOptimized(csCourseActiveSeq, csCourseMasterSeq, count) {
-  // Function to fetch the completion list
-  const fetchCompletionList = () => new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
+async function getCourseCompletionResilient(csCourseActiveSeq, csCourseMasterSeq, count) {
+  // Function to fetch completion list
+  const fetchCompletionList = async () => {
+    return await robustApiCall({
       url: "/course/cmpl/selectCmplList.do",
       type: "post",
       data: new CompletionRequest(Number(csCourseActiveSeq), count),
-      dataType: "json",
-      timeout: 60000, // Longer timeout for completion data
-      success: function (data) {
-        resolve(data.list.map(completion => ({
-          csMemberSeq: completion.csMemberSeq,
-          csMemberId: completion.csMemberId,
-          csMemberName: completion.csMemberName,
-          cxMemberEmail: completion.cxMemberEmail,
-          csApplyStatusCd: completion.csApplyStatusCd,
-          csStudyStartDate: '',
-          csCompletionYn: completion.csCompletionYn,
-          cxCompletionDate: completion.cxCompletionDate
-        })));
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to fetch completion list: ${error} (${status})`));
-      }
-    });
-  });
+      dataType: "json"
+    }).then(data => data.list.map(completion => ({
+      csMemberSeq: completion.csMemberSeq,
+      csMemberId: completion.csMemberId,
+      csMemberName: completion.csMemberName,
+      cxMemberEmail: completion.cxMemberEmail,
+      csApplyStatusCd: completion.csApplyStatusCd,
+      csStudyStartDate: '',
+      csCompletionYn: completion.csCompletionYn,
+      cxCompletionDate: completion.cxCompletionDate
+    })));
+  };
 
-  // Function to fetch the study start dates
-  const fetchStudyStartDates = () => new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
+  // Function to fetch study start dates
+  const fetchStudyStartDates = async () => {
+    return await robustApiCall({
       url: "/course/apply/selectApplyList.do",
       type: "post",
       data: new ApplicationRequest(Number(csCourseActiveSeq), Number(csCourseMasterSeq), count),
-      dataType: "json",
-      timeout: 60000,
-      success: function (data) {
-        const startDateMap = new Map();
-        data.list.forEach(apply => {
-          startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
-        });
-        resolve(startDateMap);
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to fetch study start dates: ${error} (${status})`));
-      }
+      dataType: "json"
+    }).then(data => {
+      const startDateMap = new Map();
+      data.list.forEach(apply => {
+        startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
+      });
+      return startDateMap;
     });
-  });
+  };
 
   try {
-    // Run both API calls in parallel with retry logic
+    // Execute both calls with some delay to avoid overwhelming the server
+    const completionListPromise = fetchCompletionList();
+
+    // Add a small delay before the second call
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const startDateMapPromise = fetchStudyStartDates();
+
     const [completionList, startDateMap] = await Promise.all([
-      apiCallWithRetry(fetchCompletionList),
-      apiCallWithRetry(fetchStudyStartDates)
+      completionListPromise,
+      startDateMapPromise
     ]);
 
-    // Combine the results
     return completionList.map(completion => {
       return new Completion(
         completion.csMemberSeq,
@@ -653,45 +767,201 @@ async function getCourseCompletionOptimized(csCourseActiveSeq, csCourseMasterSeq
 }
 
 /**
- * Process a single course with optimized API calls
- * @param {Course} course - The course to process
- * @param {number} index - Current course index
- * @param {number} total - Total number of courses
- * @returns {Promise<Course>} - The processed course
+ * Network-resilient version of getTotalCourseCount
  */
-async function processCourseOptimized(course, index, total) {
-  console.debug(`Processing course [${index + 1}/${total}] ${course.csYear} ${course.csTitle}...`);
+async function getTotalCourseCountResilient() {
+  return await robustApiCall({
+    url: "/course/active/selectActiveOperList.do",
+    type: "post",
+    data: new CourseRequest(),
+    dataType: "json"
+  }).then(data => data.cnt);
+}
+
+/**
+ * Network-resilient version of getCourses
+ */
+async function getCoursesResilient(count = 10) {
+  return await robustApiCall({
+    url: "/course/active/selectActiveOperList.do",
+    type: "post",
+    data: new CourseRequest(count),
+    dataType: "json"
+  }).then(data => data.list.map(course => new Course(
+    course.csCourseActiveSeq,
+    course.csCourseMasterSeq,
+    course.csTitle,
+    course.csStatusCd,
+    course.csCourseTypeCd,
+    course.csYear,
+    course.csApplyStartDate,
+    course.csApplyEndDate,
+    course.csStudyStartDate,
+    course.csStudyEndDate,
+    course.csOpenStartDate,
+    course.csOpenEndDate,
+    null,
+    course.csTitlePath,
+    null
+  )));
+}
+
+// =============================================================================
+// INTELLIGENT BATCH PROCESSING
+// =============================================================================
+
+/**
+ * Process courses in intelligent batches with network awareness
+ */
+async function processCoursesIntelligently(courses, startTime) {
+  const results = [];
+  let completed = 0;
+  let batchIndex = 0;
+
+  console.log(`🚀 Processing ${courses.length} courses with intelligent batching`);
+
+  // Start with small batches and adapt based on performance
+  let currentBatchSize = NetworkState.currentConcurrency;
+
+  for (let i = 0; i < courses.length; i += currentBatchSize) {
+    const batch = courses.slice(i, i + currentBatchSize);
+    batchIndex++;
+
+    console.log(`📦 Batch ${batchIndex} (size: ${batch.length}, concurrency: ${NetworkState.currentConcurrency})`);
+
+    const batchStartTime = Date.now();
+    const batchPromises = batch.map(async (course, batchIdx) => {
+      try {
+        const courseIndex = i + batchIdx;
+        const result = await processCourseResilient(course, courseIndex, courses.length);
+        completed++;
+
+        if (startTime) {
+          estimatedProgressTime(completed, courses.length, startTime, '과정');
+        }
+
+        return { success: true, data: result, index: courseIndex };
+      } catch (error) {
+        console.error(`Failed to process course ${course.csCourseActiveSeq} (${course.csTitle}):`, error.message);
+        completed++;
+
+        if (startTime) {
+          estimatedProgressTime(completed, courses.length, startTime, '과정');
+        }
+
+        // Return a minimal course object instead of failing completely
+        const fallbackCourse = { ...course };
+        fallbackCourse.csCmplTime = 0;
+        fallbackCourse.csCmplList = [];
+
+        return { success: false, data: fallbackCourse, error: error.message, index: i + batchIdx };
+      }
+    });
+
+    // Wait for batch to complete
+    const batchResults = await Promise.allSettled(batchPromises);
+    const batchTime = Date.now() - batchStartTime;
+
+    // Process results
+    let successCount = 0;
+    let failureCount = 0;
+
+    batchResults.forEach(result => {
+      if (result.status === 'fulfilled') {
+        results.push(result.value.data);
+        if (result.value.success) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      } else {
+        console.error(`Batch promise failed:`, result.reason);
+        failureCount++;
+      }
+    });
+
+    console.log(`✅ Batch ${batchIndex} completed: ${successCount} success, ${failureCount} failures, ${batchTime}ms`);
+
+    // Adapt batch size based on performance
+    if (successCount === batch.length && batchTime < 10000) {
+      // Increase batch size if all succeeded and was fast
+      currentBatchSize = Math.min(currentBatchSize + 1, NetworkState.currentConcurrency + 2);
+    } else if (failureCount > 0 || batchTime > 30000) {
+      // Decrease batch size if there were failures or it was slow
+      currentBatchSize = Math.max(1, currentBatchSize - 1);
+    }
+
+    // Adaptive delay between batches
+    if (i + currentBatchSize < courses.length) {
+      let delayTime = NetworkState.adaptiveBatchDelay;
+
+      // Adjust delay based on recent performance
+      const stats = CircuitBreaker.getStats();
+      if (stats.errorRate > 0.1) {
+        delayTime = Math.min(NETWORK_CONFIG.BATCH_DELAY_MAX, delayTime * 2);
+      } else if (stats.errorRate < 0.05 && batchTime < 5000) {
+        delayTime = Math.max(NETWORK_CONFIG.BATCH_DELAY_MIN, delayTime * 0.8);
+      }
+
+      NetworkState.adaptiveBatchDelay = delayTime;
+
+      console.log(`⏳ Inter-batch delay: ${delayTime}ms`);
+      await new Promise(resolve => setTimeout(resolve, delayTime));
+    }
+  }
+
+  const successCount = results.filter(r => r.csCmplTime !== undefined).length;
+  const failureCount = results.length - successCount;
+
+  console.log(`🎯 Processing complete: ${successCount} succeeded, ${failureCount} with fallback data`);
+
+  return results;
+}
+
+/**
+ * Process a single course with network resilience
+ */
+async function processCourseResilient(course, index, total) {
+  console.debug(`🔄 Processing [${index + 1}/${total}] ${course.csTitle}`);
 
   try {
-    // Parallel API calls for course metadata
+    // Get course metadata in parallel, but with small delays
+    const classCountPromise = getCourseClassCountResilient(course.csCourseActiveSeq);
+
+    await new Promise(resolve => setTimeout(resolve, 50)); // 50ms delay
+    const examCountPromise = getCourseExamCountResilient(course);
+
+    await new Promise(resolve => setTimeout(resolve, 50)); // 50ms delay
+    const completionCountPromise = getCompletionCountResilient(course.csCourseActiveSeq);
+
     const [classCount, examCount, completionCount] = await Promise.all([
-      getCourseClassCountOptimized(course.csCourseActiveSeq),
-      getCourseExamCountOptimized(course),
-      getCompletionCountOptimized(course.csCourseActiveSeq)
+      classCountPromise,
+      examCountPromise,
+      completionCountPromise
     ]);
 
-    console.debug(`Course ${course.csCourseActiveSeq}: ${classCount} classes, ${examCount} exams, ${completionCount} completions`);
+    console.debug(`📊 Course ${course.csCourseActiveSeq}: ${classCount} classes, ${examCount} exams, ${completionCount} completions`);
 
     course.csCmplTime = classCount + examCount;
 
-    // Fetch completion details
-    const completions = await getCourseCompletionOptimized(
-      course.csCourseActiveSeq,
-      course.csCourseMasterSeq,
-      completionCount
-    );
+    // Get completion details (this is usually the most expensive call)
+    if (completionCount > 0) {
+      const completions = await getCourseCompletionResilient(
+        course.csCourseActiveSeq,
+        course.csCourseMasterSeq,
+        completionCount
+      );
+      course.csCmplList = completions;
+    } else {
+      course.csCmplList = [];
+    }
 
-    course.csCmplList = completions;
-
-    console.debug(`Successfully processed course ${course.csCourseActiveSeq} with ${completions.length} completions`);
+    console.debug(`✅ Successfully processed course ${course.csCourseActiveSeq}`);
     return course;
 
   } catch (error) {
-    console.error(`Failed to process course ${course.csCourseActiveSeq} (${course.csTitle}):`, error);
-    // Return course with minimal data rather than failing completely
-    course.csCmplTime = 0;
-    course.csCmplList = [];
-    return course;
+    console.error(`❌ Failed to process course ${course.csCourseActiveSeq}:`, error.message);
+    throw error;
   }
 }
 
@@ -700,136 +970,74 @@ async function processCourseOptimized(course, index, total) {
 // =============================================================================
 
 /**
- * Optimized version of getTotalCourseCount
+ * Network-resilient version of fetchCourses
  */
-async function getTotalCourseCountOptimized() {
-  const apiCall = () => new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
-      url: "/course/active/selectActiveOperList.do",
-      type: "post",
-      data: new CourseRequest(),
-      dataType: "json",
-      timeout: 30000,
-      success: function (data) {
-        resolve(data.cnt);
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to fetch course count: ${error} (${status})`));
-      }
-    });
-  });
-
-  return await apiCallWithRetry(apiCall);
-}
-
-/**
- * Optimized version of getCourses
- */
-async function getCoursesOptimized(count = 10) {
-  const apiCall = () => new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true
-      },
-      url: "/course/active/selectActiveOperList.do",
-      type: "post",
-      data: new CourseRequest(count),
-      dataType: "json",
-      timeout: 60000,
-      success: function (data) {
-        resolve(data.list.map(course => new Course(
-          course.csCourseActiveSeq,
-          course.csCourseMasterSeq,
-          course.csTitle,
-          course.csStatusCd,
-          course.csCourseTypeCd,
-          course.csYear,
-          course.csApplyStartDate,
-          course.csApplyEndDate,
-          course.csStudyStartDate,
-          course.csStudyEndDate,
-          course.csOpenStartDate,
-          course.csOpenEndDate,
-          null,
-          course.csTitlePath,
-          null
-        )));
-      },
-      error: function (xhr, status, error) {
-        reject(new Error(`Failed to fetch courses: ${error} (${status})`));
-      }
-    });
-  });
-
-  return await apiCallWithRetry(apiCall);
-}
-
-/**
- * Optimized version of fetchCourses with parallel processing and caching
- * @function fetchCoursesOptimized
- * @param {string} action - The action to perform on the courses.
- * @returns {Promise<Course[]>} - The courses.
- */
-async function fetchCoursesOptimized(action) {
+async function fetchCoursesResilient(action) {
   const startTime = Date.now();
 
   try {
-    console.log('🚀 Starting optimized course fetching...');
-    console.log(`Configuration: Concurrency=${OPTIMIZATION_CONFIG.CONCURRENCY_LIMIT}, Retries=${OPTIMIZATION_CONFIG.RETRY_ATTEMPTS}, Incremental=${OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED}`);
+    console.log('🚀 Starting network-resilient course fetching...');
 
-    // Step 1: Get total course count and course list
+    // Display current network configuration
+    console.log(`🔧 Network Config: concurrency=${NetworkState.currentConcurrency}, timeout=${NETWORK_CONFIG.BASE_TIMEOUT}ms`);
+
+    // Initialize health monitoring
+    const healthChecker = setInterval(() => {
+      const stats = CircuitBreaker.getStats();
+      const avgResponseTime = RateLimiter.getAverageResponseTime();
+
+      console.log(`📊 Health Check - Error rate: ${(stats.errorRate * 100).toFixed(1)}%, Avg response: ${avgResponseTime.toFixed(0)}ms, Active: ${NetworkState.activeConnections}, Concurrency: ${NetworkState.currentConcurrency}`);
+
+      // Update health status
+      if (stats.isOpen) {
+        NetworkState.healthStatus = 'unhealthy';
+      } else if (stats.errorRate > 0.2 || avgResponseTime > 20000) {
+        NetworkState.healthStatus = 'degraded';
+      } else {
+        NetworkState.healthStatus = 'healthy';
+      }
+    }, NETWORK_CONFIG.HEALTH_CHECK_INTERVAL);
+
+    // Step 1: Get course count and list
     console.log('📊 Fetching course count and list...');
-    const totalCourseCount = await getTotalCourseCountOptimized();
+    const totalCourseCount = await getTotalCourseCountResilient();
     console.log(`Found ${totalCourseCount} courses.`);
 
-    const allCourses = await getCoursesOptimized(totalCourseCount);
+    const allCourses = await getCoursesResilient(totalCourseCount);
     console.log(`Fetched ${allCourses.length} course records.`);
 
-    // Step 2: Determine which courses need updating (for incremental updates)
+    // Step 2: Determine courses to process (incremental update logic)
     let coursesToProcess = allCourses;
     let existingCourses = null;
 
-    if (action === 'update' && OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED) {
+    if (action === 'update') {
       try {
         existingCourses = await getData('courses');
-        coursesToProcess = getCoursesToUpdate(allCourses, existingCourses);
+        if (existingCourses && existingCourses.length > 0) {
+          coursesToProcess = getCoursesToUpdate(allCourses, existingCourses);
+          console.log(`📈 Incremental update: ${coursesToProcess.length} of ${allCourses.length} courses need processing`);
+        }
       } catch (error) {
-        console.warn('Could not load existing courses for incremental update, processing all courses:', error.message);
+        console.warn('Could not load existing courses, processing all:', error.message);
         coursesToProcess = allCourses;
       }
     }
 
     if (coursesToProcess.length === 0) {
       console.log('✅ No courses need updating.');
+      clearInterval(healthChecker);
       return existingCourses || [];
     }
 
-    console.log(`📚 Processing ${coursesToProcess.length} courses in parallel batches...`);
+    // Step 3: Process courses intelligently
+    console.log(`🎯 Processing ${coursesToProcess.length} courses with network resilience...`);
+    const processedCourses = await processCoursesIntelligently(coursesToProcess, startTime);
 
-    // Step 3: Process courses in parallel batches
-    const processedCourses = await processInBatches(
-      coursesToProcess,
-      OPTIMIZATION_CONFIG.CONCURRENCY_LIMIT,
-      processCourseOptimized,
-      startTime
-    );
-
-    console.log(`✅ Successfully processed ${processedCourses.length} courses.`);
-
-    // Step 4: Merge with existing data for incremental updates
+    // Step 4: Merge results for incremental updates
     let finalCourses = processedCourses;
 
-    if (action === 'update' && existingCourses && OPTIMIZATION_CONFIG.INCREMENTAL_UPDATE_ENABLED) {
-      console.log('🔄 Merging with existing course data...');
+    if (action === 'update' && existingCourses && existingCourses.length > 0) {
+      console.log('🔄 Merging with existing data...');
 
       const processedMap = new Map(
         processedCourses.map(course => [course.csCourseActiveSeq, course])
@@ -839,153 +1047,211 @@ async function fetchCoursesOptimized(action) {
         processedMap.get(existingCourse.csCourseActiveSeq) || existingCourse
       );
 
-      // Add any completely new courses
+      // Add completely new courses
       processedCourses.forEach(course => {
         if (!existingCourses.some(existing => existing.csCourseActiveSeq === course.csCourseActiveSeq)) {
           finalCourses.push(course);
         }
       });
-
-      console.log(`Merged data: ${finalCourses.length} total courses.`);
     }
 
     // Step 5: Save to database
     if (action === 'add') {
       console.log('💾 Adding courses to database...');
       await addData('courses', finalCourses);
-      console.log(`Successfully added ${finalCourses.length} courses to database.`);
     } else if (action === 'update') {
       console.log('💾 Updating courses in database...');
       await updateData('courses', finalCourses);
-      console.log(`Successfully updated ${finalCourses.length} courses in database.`);
-    } else {
-      throw new Error(`Unknown action: ${action}`);
     }
 
     // Step 6: Performance summary
+    clearInterval(healthChecker);
+
     const endTime = Date.now();
     const duration = (endTime - startTime) / 1000;
-    const avgTime = duration / coursesToProcess.length;
+    const stats = CircuitBreaker.getStats();
+    const avgResponseTime = RateLimiter.getAverageResponseTime();
 
-    console.log(`🎉 Optimization complete!`);
+    console.log(`🎉 Processing complete!`);
     console.log(`⏱️  Total time: ${duration.toFixed(2)}s`);
-    console.log(`📈 Average time per course: ${avgTime.toFixed(3)}s`);
-    console.log(`🗂️  Cache size: ${apiCache.size} entries`);
+    console.log(`📊 Final Stats:`);
+    console.log(`   - Total requests: ${NetworkState.performanceMetrics.totalRequests}`);
+    console.log(`   - Success rate: ${((1 - stats.errorRate) * 100).toFixed(1)}%`);
+    console.log(`   - Avg response time: ${avgResponseTime.toFixed(0)}ms`);
+    console.log(`   - Final concurrency: ${NetworkState.currentConcurrency}`);
+    console.log(`   - Cache size: ${apiCache.size} entries`);
+    console.log(`   - Health status: ${NetworkState.healthStatus}`);
 
     return finalCourses;
 
   } catch (error) {
-    console.error('❌ Failed to fetch courses:', error);
+    console.error('❌ Network-resilient course fetching failed:', error);
     throw error;
-  } finally {
-    // Clean up old cache entries periodically
-    if (apiCache.size > 1000) {
-      console.log('🧹 Cleaning up old cache entries...');
-      const now = Date.now();
-      let cleanedCount = 0;
-
-      for (const [key, value] of apiCache.entries()) {
-        if (now - value.timestamp > OPTIMIZATION_CONFIG.CACHE_TTL) {
-          apiCache.delete(key);
-          cleanedCount++;
-        }
-      }
-
-      console.log(`Cleaned ${cleanedCount} expired cache entries.`);
-    }
   }
 }
 
 /**
- * Optimized version of addCourses
- * @function addCoursesOptimized
- * @returns {Promise<Course[]>} - The courses.
+ * Helper function to determine which courses need updating
  */
-async function addCoursesOptimized() {
-  return await fetchCoursesOptimized('add');
-}
+function getCoursesToUpdate(allCourses, existingCourses) {
+  if (!existingCourses || existingCourses.length === 0) {
+    return allCourses;
+  }
 
-/**
- * Optimized version of updateCourses
- * @function updateCoursesOptimized
- * @returns {Promise<Course[]>} - The courses.
- */
-async function updateCoursesOptimized() {
-  return await fetchCoursesOptimized('update');
+  const existingMap = new Map(
+    existingCourses.map(course => [course.csCourseActiveSeq, course])
+  );
+
+  return allCourses.filter(course => {
+    const existing = existingMap.get(course.csCourseActiveSeq);
+    if (!existing) return true; // New course
+
+    // Check if course has changed
+    return (
+      course.csStatusCd !== existing.csStatusCd ||
+      course.csStudyEndDate !== existing.csStudyEndDate ||
+      course.csOpenEndDate !== existing.csOpenEndDate ||
+      course.csCourseTypeCd !== existing.csCourseTypeCd
+    );
+  });
 }
 
 // =============================================================================
-// BACKWARD COMPATIBILITY AND UTILITY FUNCTIONS
+// PUBLIC API FUNCTIONS
 // =============================================================================
 
 /**
- * Legacy functions maintained for backward compatibility
+ * Network-resilient version of addCourses
  */
-function getCompletionCount(csCourseActiveSeq) {
-  return getCompletionCountOptimized(csCourseActiveSeq);
-}
-
-function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
-  return getCourseCompletionOptimized(csCourseActiveSeq, csCourseMasterSeq, count);
-}
-
-function getCourseClassCount(csCourseActiveSeq) {
-  return getCourseClassCountOptimized(csCourseActiveSeq);
-}
-
-function getCourseExamCount(course) {
-  return getCourseExamCountOptimized(course);
-}
-
-function getTotalCourseCount() {
-  return getTotalCourseCountOptimized();
-}
-
-function getCourses(count = 10) {
-  return getCoursesOptimized(count);
-}
-
-async function fetchCourses(action) {
-  return await fetchCoursesOptimized(action);
-}
-
-async function addCourses() {
-  return await addCoursesOptimized();
+async function addCoursesResilient() {
+  return await fetchCoursesResilient('add');
 }
 
 /**
- * Cache management utilities
+ * Network-resilient version of updateCourses
+ */
+async function updateCoursesResilient() {
+  return await fetchCoursesResilient('update');
+}
+
+// =============================================================================
+// UTILITY AND MANAGEMENT FUNCTIONS
+// =============================================================================
+
+/**
+ * Get network statistics
+ */
+function getNetworkStats() {
+  const circuitStats = CircuitBreaker.getStats();
+  const avgResponseTime = RateLimiter.getAverageResponseTime();
+
+  return {
+    circuitBreaker: {
+      isOpen: circuitStats.isOpen,
+      errorRate: circuitStats.errorRate,
+      timeoutRate: circuitStats.timeoutRate,
+      sampleSize: circuitStats.sampleSize
+    },
+    performance: {
+      totalRequests: NetworkState.performanceMetrics.totalRequests,
+      successfulRequests: NetworkState.performanceMetrics.successfulRequests,
+      failedRequests: NetworkState.performanceMetrics.failedRequests,
+      timeoutRequests: NetworkState.performanceMetrics.timeoutRequests,
+      avgResponseTime: avgResponseTime
+    },
+    rateLimiting: {
+      currentConcurrency: NetworkState.currentConcurrency,
+      activeConnections: NetworkState.activeConnections,
+      tokensAvailable: NetworkState.rateLimitTokens,
+      healthStatus: NetworkState.healthStatus
+    },
+    cache: {
+      size: apiCache.size,
+      ttl: NETWORK_CONFIG.CACHE_TTL
+    },
+    adaptive: {
+      batchDelay: NetworkState.adaptiveBatchDelay
+    }
+  };
+}
+
+/**
+ * Reset network state (for testing or recovery)
+ */
+function resetNetworkState() {
+  NetworkState.currentConcurrency = NETWORK_CONFIG.INITIAL_CONCURRENCY;
+  NetworkState.circuitBreakerOpen = false;
+  NetworkState.circuitBreakerOpenTime = 0;
+  NetworkState.recentRequests = [];
+  NetworkState.performanceMetrics = {
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    timeoutRequests: 0,
+    avgResponseTime: 0,
+    lastResponseTimes: []
+  };
+  NetworkState.activeConnections = 0;
+  NetworkState.rateLimitTokens = NETWORK_CONFIG.MAX_CONCURRENCY;
+  NetworkState.lastTokenRefill = Date.now();
+  NetworkState.healthStatus = 'healthy';
+  NetworkState.adaptiveBatchDelay = NETWORK_CONFIG.BATCH_DELAY_MIN;
+
+  console.log('🔄 Network state reset');
+}
+
+/**
+ * Clear API cache
  */
 function clearApiCache() {
   const size = apiCache.size;
   apiCache.clear();
-  console.log(`Cleared ${size} cache entries.`);
+  console.log(`🧹 Cleared ${size} cache entries`);
 }
 
-function getCacheStats() {
-  const now = Date.now();
-  let validEntries = 0;
-  let expiredEntries = 0;
-
-  for (const [key, value] of apiCache.entries()) {
-    if (now - value.timestamp < OPTIMIZATION_CONFIG.CACHE_TTL) {
-      validEntries++;
-    } else {
-      expiredEntries++;
-    }
-  }
-
-  return {
-    total: apiCache.size,
-    valid: validEntries,
-    expired: expiredEntries,
-    cacheHitRate: '(not tracked)'
-  };
+/**
+ * Update network configuration
+ */
+function updateNetworkConfig(newConfig) {
+  Object.assign(NETWORK_CONFIG, newConfig);
+  console.log('🔧 Updated network configuration:', NETWORK_CONFIG);
 }
 
-function updateOptimizationConfig(newConfig) {
-  Object.assign(OPTIMIZATION_CONFIG, newConfig);
-  console.log('Updated optimization configuration:', OPTIMIZATION_CONFIG);
+// =============================================================================
+// BACKWARD COMPATIBILITY
+// =============================================================================
+
+// Legacy functions for backward compatibility
+function getCompletionCount(csCourseActiveSeq) {
+  return getCompletionCountResilient(csCourseActiveSeq);
+}
+
+function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
+  return getCourseCompletionResilient(csCourseActiveSeq, csCourseMasterSeq, count);
+}
+
+function getCourseClassCount(csCourseActiveSeq) {
+  return getCourseClassCountResilient(csCourseActiveSeq);
+}
+
+function getCourseExamCount(course) {
+  return getCourseExamCountResilient(course);
+}
+
+function getTotalCourseCount() {
+  return getTotalCourseCountResilient();
+}
+
+function getCourses(count = 10) {
+  return getCoursesResilient(count);
+}
+
+async function fetchCourses(action) {
+  return await fetchCoursesResilient(action);
+}
+
+async function addCourses() {
+  return await addCoursesResilient();
 }
 
 /**
@@ -998,7 +1264,7 @@ function isCustomCourse(course, keyword) {
 async function searchCustomCourses(input = '', year = new Date().getFullYear()) {
   const exist = await getData('courses');
   if (!exist) {
-    await addCoursesOptimized();
+    await addCoursesResilient();
   }
   const courses = await getData('courses');
   customTable(courses);
@@ -1023,7 +1289,7 @@ async function searchCustomCourses(input = '', year = new Date().getFullYear()) 
 export async function searchCourses(input = '', year = new Date().getFullYear()) {
   const exist = await getData('courses');
   if (!exist) {
-    await addCoursesOptimized();
+    await addCoursesResilient();
   }
   const courses = await getData('courses');
 
@@ -1041,13 +1307,14 @@ export async function searchCourses(input = '', year = new Date().getFullYear())
   return results;
 }
 
-// Export the optimized function as the main updateCourses function
-export const updateCourses = updateCoursesOptimized;
+// Export the network-resilient function as the main updateCourses function
+export const updateCourses = updateCoursesResilient;
 
-// Export utility functions for advanced users
+// Export utility functions
 export {
+  getNetworkStats,
+  resetNetworkState,
   clearApiCache,
-  getCacheStats,
-  updateOptimizationConfig,
-  OPTIMIZATION_CONFIG
+  updateNetworkConfig,
+  NETWORK_CONFIG
 };
