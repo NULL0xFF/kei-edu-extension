@@ -1,7 +1,7 @@
 import * as jQuery from 'jquery';
-import {customTable, getCSRFToken} from './shared.js';
-import {addData, getData, updateData} from "./storage";
-import {estimatedProgressTime} from "./solution";
+import { customTable, getCSRFToken } from './shared.js';
+import { addData, getData, updateData } from "./storage";
+import { estimatedProgressTime } from "./solution";
 
 /**
  * Represents a completion.
@@ -26,7 +26,7 @@ import {estimatedProgressTime} from "./solution";
  */
 class Completion {
   constructor(csMemberSeq, csMemberId, csMemberName, cxMemberEmail,
-      csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
+    csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
     this.csMemberSeq = csMemberSeq;
     this.csMemberId = csMemberId;
     this.csMemberName = csMemberName;
@@ -67,7 +67,7 @@ class Completion {
 
     // Return the formatted date.
     return new Date(
-        Date.UTC(year, month - 1, day, hour, minute, second) + timezoneOffset);
+      Date.UTC(year, month - 1, day, hour, minute, second) + timezoneOffset);
   }
 }
 
@@ -166,9 +166,9 @@ class Course {
   }
 
   constructor(csCourseActiveSeq, csCourseMasterSeq, csTitle, csStatusCd,
-      csCourseTypeCd, csYear, csApplyStartDate, csApplyEndDate,
-      csStudyStartDate, csStudyEndDate, csOpenStartDate, csOpenEndDate,
-      csCmplTime, csTitlePath, csCmplList = []) {
+    csCourseTypeCd, csYear, csApplyStartDate, csApplyEndDate,
+    csStudyStartDate, csStudyEndDate, csOpenStartDate, csOpenEndDate,
+    csCmplTime, csTitlePath, csCmplList = []) {
     this.csCourseActiveSeq = csCourseActiveSeq; // Class Unique Identifier
     this.csCourseMasterSeq = csCourseMasterSeq; // Class Creation Group, Master Identifier
     this.csTitle = csTitle;
@@ -344,7 +344,7 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
         url: "/course/apply/selectApplyList.do",
         type: "post",
         data: new ApplicationRequest(Number(csCourseActiveSeq),
-            Number(csCourseMasterSeq), count),
+          Number(csCourseMasterSeq), count),
         dataType: "json",
         tryCount: 0,
         retryLimit: 3,
@@ -371,10 +371,10 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
 
   // Combine the results of both AJAX calls
   return Promise.all([fetchCompletionList(), fetchStudyStartDates()])
-  .then(([completionList, startDateMap]) => {
-    // Fill in the missing csStudyStartDate
-    return completionList.map(completion => {
-      return new Completion(
+    .then(([completionList, startDateMap]) => {
+      // Fill in the missing csStudyStartDate
+      return completionList.map(completion => {
+        return new Completion(
           completion.csMemberSeq,
           completion.csMemberId,
           completion.csMemberName,
@@ -383,12 +383,12 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
           startDateMap.get(completion.csMemberSeq) || '', // Use the study start date from the map or default to ''
           completion.csCompletionYn,
           completion.cxCompletionDate);
+      });
+    })
+    .catch(error => {
+      console.error('Error fetching course completion:', error);
+      throw error; // Re-throw the error to ensure the promise is rejected
     });
-  })
-  .catch(error => {
-    console.error('Error fetching course completion:', error);
-    throw error; // Re-throw the error to ensure the promise is rejected
-  });
 }
 
 /**
@@ -543,11 +543,11 @@ function getCourses(count = 10) {
       retryLimit: 3,
       success: function (data) {
         resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
-            course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
-            course.csCourseTypeCd, course.csYear, course.csApplyStartDate,
-            course.csApplyEndDate, course.csStudyStartDate,
-            course.csStudyEndDate, course.csOpenStartDate, course.csOpenEndDate,
-            null, course.csTitlePath, null)));
+          course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
+          course.csCourseTypeCd, course.csYear, course.csApplyStartDate,
+          course.csApplyEndDate, course.csStudyStartDate,
+          course.csStudyEndDate, course.csOpenStartDate, course.csOpenEndDate,
+          null, course.csTitlePath, null)));
       },
       error: function (xhr, status, error) {
         console.log(xhr);
@@ -584,31 +584,31 @@ async function fetchCourses(action) {
     estimatedProgressTime(i, courses.length, started, '과정');
     const course = courses[i];
     console.log(`Processing course [${i
-    + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
+      + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
 
     console.debug(
-        `Fetching class count for course ${course.csCourseActiveSeq}...`)
+      `Fetching class count for course ${course.csCourseActiveSeq}...`)
     const classCount = await getCourseClassCount(course.csCourseActiveSeq);
     const examCount = await getCourseExamCount(course);
     console.debug(
-        `Found ${classCount} classes for course ${course.csCourseActiveSeq}.`)
+      `Found ${classCount} classes for course ${course.csCourseActiveSeq}.`)
     console.debug(
-        `Found ${examCount} exams for course ${course.csCourseActiveSeq}.`)
+      `Found ${examCount} exams for course ${course.csCourseActiveSeq}.`)
     course.csCmplTime = classCount + examCount;
 
     console.debug(
-        `Fetching completion count for course ${course.csCourseActiveSeq}...`)
+      `Fetching completion count for course ${course.csCourseActiveSeq}...`)
     const completionCount = await getCompletionCount(course.csCourseActiveSeq);
     console.debug(
-        `Found ${completionCount} completion records for course ${course.csCourseActiveSeq}.`)
+      `Found ${completionCount} completion records for course ${course.csCourseActiveSeq}.`)
 
     console.debug(
-        `Fetching completions for course ${course.csCourseActiveSeq}...`)
+      `Fetching completions for course ${course.csCourseActiveSeq}...`)
     const completions = await getCourseCompletion(course.csCourseActiveSeq,
-        course.csCourseMasterSeq,
-        completionCount);
+      course.csCourseMasterSeq,
+      completionCount);
     console.debug(
-        `Fetched ${completions.length} completions for course ${course.csCourseActiveSeq}.`)
+      `Fetched ${completions.length} completions for course ${course.csCourseActiveSeq}.`)
     course.csCmplList = completions;
   }
   console.log(`Processed ${courses.length} courses.`)
@@ -659,7 +659,7 @@ function isCustomCourse(course, keyword) {
 }
 
 async function searchCustomCourses(input = '',
-    year = new Date().getFullYear()) {
+  year = new Date().getFullYear()) {
   // Get all courses from the database
   const exist = await getData('courses');
   if (!exist) {
@@ -687,14 +687,14 @@ async function searchCustomCourses(input = '',
   // Table the search results
   customTable(results);
   console.log(
-      `Found ${results.length} courses that match the search criteria.`);
+    `Found ${results.length} courses that match the search criteria.`);
 
   // Return the search results
   return results;
 }
 
 export async function searchCourses(input = '',
-    year = new Date().getFullYear()) {
+  year = new Date().getFullYear()) {
   // Get all courses from the database
   const exist = await getData('courses');
   if (!exist) {
@@ -727,4 +727,4 @@ export async function searchCourses(input = '',
   return results;
 }
 
-export {updateCourses};
+export { updateCourses };

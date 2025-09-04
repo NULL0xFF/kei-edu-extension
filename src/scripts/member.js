@@ -1,6 +1,6 @@
 import * as jQuery from 'jquery';
-import {getCSRFToken} from './shared.js';
-import {addData, getData, isExist, updateData} from "./storage";
+import { getCSRFToken } from './shared.js';
+import { addData, getData, isExist, updateData } from "./storage";
 
 /**
  * Represents a member.
@@ -19,8 +19,8 @@ import {addData, getData, isExist, updateData} from "./storage";
  */
 class Member {
   constructor(csMemberSeq, csMemberId, csMemberName, cxMemberBirthday,
-      cxMemberEmail, cxCompanyName, cxDepartmentName, cxDivisionCdName,
-      csCertiType) {
+    cxMemberEmail, cxCompanyName, cxDepartmentName, cxDivisionCdName,
+    csCertiType) {
     this.csMemberSeq = csMemberSeq;
     this.csMemberId = csMemberId;
     this.csMemberName = csMemberName;
@@ -142,10 +142,10 @@ function getActiveMembers(count = 10) {
         const members = [];
         for (const item of data.list) {
           members.push(
-              new Member(item.csMemberSeq, item.csMemberId, item.csMemberName,
-                  item.cxMemberBirthday, item.cxMemberEmail, item.cxCompanyName,
-                  item.cxDepartmentName, item.cxDivisionCdName,
-                  item.csCertiType));
+            new Member(item.csMemberSeq, item.csMemberId, item.csMemberName,
+              item.cxMemberBirthday, item.cxMemberEmail, item.cxCompanyName,
+              item.cxDepartmentName, item.cxDivisionCdName,
+              item.csCertiType));
         }
         resolve(members);
       },
@@ -183,12 +183,12 @@ async function fetchMembers(action) {
     console.debug('Adding active members to the database...');
     await addData('members', members);
     console.debug(
-        `Successfully added ${members.length} members to the database.`);
+      `Successfully added ${members.length} members to the database.`);
   } else if (action === 'update') {
     console.log('Updating active members in the database...');
     await updateData('members', members);
     console.log(
-        `Successfully updated ${members.length} members in the database.`);
+      `Successfully updated ${members.length} members in the database.`);
   } else {
     throw new Error(`Unknown action: ${action}`);
   }
@@ -223,7 +223,7 @@ async function updateMembers() {
  */
 function isBelongedToCompany(member, keyword) {
   return (member.cxCompanyName && member.cxCompanyName.includes(keyword))
-      || (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
+    || (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
 }
 
 export async function searchMembers(input = '') {
@@ -253,4 +253,4 @@ export async function searchMembers(input = '') {
   return results;
 }
 
-export {updateMembers};
+export { updateMembers };

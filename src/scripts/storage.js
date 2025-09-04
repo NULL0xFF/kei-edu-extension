@@ -15,7 +15,7 @@ async function initDB() {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      db.createObjectStore('data', {keyPath: 'id'});
+      db.createObjectStore('data', { keyPath: 'id' });
     };
   });
 }
@@ -32,7 +32,7 @@ async function addData(id, value) {
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readwrite');
   const store = transaction.objectStore('data');
-  await store.add({id, value});
+  await store.add({ id, value });
   console.debug(`Successfully added data with ID: ${id}`);
 }
 
@@ -51,7 +51,7 @@ async function getData(id) {
     const request = store.get(id);
     request.onerror = reject;
     request.onsuccess = () => resolve(
-        request.result ? request.result.value : null);
+      request.result ? request.result.value : null);
   });
 }
 
@@ -67,7 +67,7 @@ async function updateData(id, value) {
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readwrite');
   const store = transaction.objectStore('data');
-  const data = {id, value};
+  const data = { id, value };
   await store.put(data);
   console.debug(`Successfully updated data with ID: ${id}`);
 }
@@ -104,4 +104,4 @@ async function isExist(id) {
   });
 }
 
-export {addData, getData, updateData, deleteData, isExist};
+export { addData, getData, updateData, deleteData, isExist };
