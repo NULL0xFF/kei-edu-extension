@@ -516,9 +516,9 @@ function getTotalCourseCount() {
       type: "post",
       data: new CourseRequest(),
       dataType: "json",
-      timeout: 1000, // 1 seconds timeout
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 10,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.cnt);
       },
@@ -557,9 +557,9 @@ function getCourses(count = 10) {
       type: "post",
       data: new CourseRequest(count),
       dataType: "json",
-      timeout: 1000, // 1 seconds timeout
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 10,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
           course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
