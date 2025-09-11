@@ -50,11 +50,11 @@ class Logger {
       if (!stack) return 'unknown';
 
       const lines = stack.split('\n');
-      // Skip first line (Error message), this function, and the log method
-      // Look for the first line that's not from this Logger class
-      for (let i = 3; i < lines.length; i++) {
+      // Skip: Error message, getCaller, log method, debug/info/warn/error method
+      // Start from index 4 to get the actual caller
+      for (let i = 4; i < lines.length; i++) {
         const line = lines[i];
-        if (line && !line.includes('Logger.') && !line.includes('log')) {
+        if (line) {
           // Extract function name from stack trace
           // Handle different formats: "at functionName" or "functionName@"
           let match = line.match(/at\s+([^\s(]+)/);
@@ -67,8 +67,16 @@ class Logger {
             if (funcName.includes('.')) {
               funcName = funcName.split('.').pop();
             }
-            if (funcName === '<anonymous>' || funcName === 'anonymous') {
-              return 'anonymous';
+            // Skip browser internal functions and logger methods
+            if (funcName === '<anonymous>' ||
+              funcName === 'anonymous' ||
+              funcName.includes('Logger') ||
+              funcName === 'log' ||
+              funcName === 'debug' ||
+              funcName === 'info' ||
+              funcName === 'warn' ||
+              funcName === 'error') {
+              continue;
             }
             return funcName;
           }
