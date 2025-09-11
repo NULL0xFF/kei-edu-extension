@@ -32,5 +32,8 @@ module.exports = {
         }
       ]
     })
-  ]
+  ],
+  optimization: {
+    mangleExports: false
+  }
 };
