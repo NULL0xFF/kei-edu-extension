@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
-import {searchMembers, updateMembers} from "./member";
-import {searchCourses, updateCourses} from "./course";
-import {toLocalISOFormat} from "./shared";
+import { searchMembers, updateMembers } from "./member";
+import { searchCourses, updateCourses } from "./course";
+import { toLocalISOFormat } from "./shared";
 
 /**
  * Record class that contains member and course information
@@ -48,11 +48,11 @@ class Record {
         csCmplTime: course.csCmplTime,
         csTitlePath: course.csTitlePath,
         csCompletionYn: course.csCmplList.find(
-            completion => completion.csMemberSeq
-                === member.csMemberSeq).csCompletionYn,
+          completion => completion.csMemberSeq
+            === member.csMemberSeq).csCompletionYn,
         cxCompletionDate: course.csCmplList.find(
-            completion => completion.csMemberSeq
-                === member.csMemberSeq).cxCompletionDate
+          completion => completion.csMemberSeq
+            === member.csMemberSeq).cxCompletionDate
       });
     });
   }
@@ -63,20 +63,18 @@ async function updateAll() {
   await updateCourses();
 }
 
-async function search(
-    input = '',
-    start = new Date(Date.UTC(new Date().getFullYear(), 0, 1)
-        + new Date().getTimezoneOffset() * 60000),
-    end = new Date(Date.UTC(new Date().getFullYear(), 11, 31)
-        + new Date().getTimezoneOffset() * 60000)
-) {
+async function search(input = '', start = new Date(
+  Date.UTC(new Date().getFullYear(), 0, 1) + new Date().getTimezoneOffset()
+  * 60000), end = new Date(
+    Date.UTC(new Date().getFullYear(), 11, 31) + new Date().getTimezoneOffset()
+    * 60000)) {
   // start and end date can be given as string format of local time 'yyyy.MM.dd' so it needs to be casted to Date object
   start = new Date(start);
   end = new Date(end);
   end.setDate(end.getDate() + 1);
   // Convert start and end to UTC format
   start = new Date(
-      Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()));
+    Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()));
   end = new Date(Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()));
 
   // Offset the start and end date to local time
@@ -95,11 +93,11 @@ async function search(
     // Course instance has 'csCmplList', an array of Completion that indicate members
     courses.forEach(course => {
       const completions = course.csCmplList.filter(
-          completion => completion.csMemberSeq === member.csMemberSeq);
+        completion => completion.csMemberSeq === member.csMemberSeq);
       completions.forEach(completion => {
         // Check if results already have the member
         let record = results.find(
-            result => result.csMemberSeq === member.csMemberSeq);
+          result => result.csMemberSeq === member.csMemberSeq);
         if (!record) {
           record = new Record(member, [course]);
           results.push(record);
@@ -139,16 +137,16 @@ async function search(
   results.forEach(record => {
     // Check member attributes
     let memberMatched = false;
-    if (
-        (record.cxCompanyName && record.cxCompanyName.includes(input)) ||
-        (record.cxDepartmentName && record.cxDepartmentName.includes(input))) {
+    if ((record.cxCompanyName && record.cxCompanyName.includes(input))
+      || (record.cxDepartmentName && record.cxDepartmentName.includes(
+        input))) {
       memberMatched = true;
     }
     // Check course attributes
     let courseMatched = false;
     record.courses.forEach(course => {
       if (course.csTitle.includes(input) && course.cxCompletionDate >= start
-          && course.cxCompletionDate <= end) {
+        && course.cxCompletionDate <= end) {
         courseMatched = true;
       }
     });
@@ -157,7 +155,7 @@ async function search(
       // Filter courses that is between start and end date
       record.courses.forEach(course => {
         if (course.cxCompletionDate >= start && course.cxCompletionDate
-            <= end) {
+          <= end) {
           // console.log(`Course Title: ${course.csTitle}\nMember ID: ${record.csMemberId}\nCompletion Date: ${course.cxCompletionDate}`);
           coursesMatched.push(course);
         }
@@ -194,58 +192,48 @@ function saveAsCSV(filename, results) {
   results.forEach(result => {
     result.courses.forEach(course => {
       if (!courses.some(c => c.csCourseActiveSeq === course.csCourseActiveSeq
-          && c.csCourseMasterSeq === course.csCourseMasterSeq)) {
+        && c.csCourseMasterSeq === course.csCourseMasterSeq)) {
         courses.push(course);
       }
     });
   });
 
-  const csv = `${[
-    '아이디',
-    '이름',
-    '생년월일',
-    '소속기관',
-    '부서',
-    '이메일',
-    ...courses.map(course => `${course.csTitle}`)
-  ].join(',')}\n${results.map(result => {
-    return `${[
-      result.csMemberId,
-      result.csMemberName,
-      result.cxMemberBirthday,
-      result.cxCompanyName,
-      result.cxDepartmentName,
-      result.cxMemberEmail,
-      ...courses.map(course => {
-        const completion = result.courses.find(
+  const csv = `${['아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
+    ...courses.map(course => `${course.csTitle}`)].join(',')}\n${results.map(
+      result => {
+        return `${[result.csMemberId, result.csMemberName,
+        result.cxMemberBirthday, result.cxCompanyName,
+        result.cxDepartmentName, result.cxMemberEmail,
+        ...courses.map(course => {
+          const completion = result.courses.find(
             c => c.csCourseActiveSeq === course.csCourseActiveSeq
-                && c.csCourseMasterSeq === course.csCourseMasterSeq);
-        if (completion) {
-          // Completion Exists
-          if (completion.csCompletionYn && completion.csCompletionYn == 'Y') {
-            // Completed
-            if (completion.cxCompletionDate) {
-              // console.debug(`Search Start Date: ${course.csStudyStartDate}\nSearch End Date: ${course.csStudyEndDate}\nCompletion Date: ${completion.cxCompletionDate}`);
-              // Completion date exists
-              return course.csCmplTime;
-            } else {
-              console.error(
+              && c.csCourseMasterSeq === course.csCourseMasterSeq);
+          if (completion) {
+            // Completion Exists
+            if (completion.csCompletionYn && completion.csCompletionYn
+              == 'Y') {
+              // Completed
+              if (completion.cxCompletionDate) {
+                // console.debug(`Search Start Date: ${course.csStudyStartDate}\nSearch End Date: ${course.csStudyEndDate}\nCompletion Date: ${completion.cxCompletionDate}`);
+                // Completion date exists
+                return course.csCmplTime;
+              } else {
+                console.error(
                   `Completion date is missing for ${result.csMemberName} in ${course.csTitle}`);
+                return 0;
+              }
+            } else {
               return 0;
             }
           } else {
             return 0;
           }
-        } else {
-          return 0;
-        }
-      })
-    ].join(',')}`;
-  }).join('\n')}`;
+        })].join(',')}`;
+      }).join('\n')}`;
 
   // Add BOM for UTF-8 encoding
   const bom = '\uFEFF';
-  const blob = new Blob([bom + csv], {type: 'text/csv;charset=utf-8;'});
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -258,7 +246,7 @@ function saveAsXLSX(filename, results) {
   results.forEach(result => {
     result.courses.forEach(course => {
       if (!courses.some(c => c.csCourseActiveSeq === course.csCourseActiveSeq
-          && c.csCourseMasterSeq === course.csCourseMasterSeq)) {
+        && c.csCourseMasterSeq === course.csCourseMasterSeq)) {
         courses.push(course);
       }
     });
@@ -279,50 +267,38 @@ function saveAsXLSX(filename, results) {
     }
   });
 
-  const ws = XLSX.utils.json_to_sheet([
-    [
-      '아이디',
-      '이름',
-      '생년월일',
-      '소속기관',
-      '부서',
-      '이메일',
-      ...courses.map(course => `${course.csTitle}`)
-    ],
+  const ws = XLSX.utils.json_to_sheet(
+    [['아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
+      ...courses.map(course => `${course.csTitle}`)],
     ...results.map(result => {
-      return [
-        result.csMemberId,
-        result.csMemberName,
-        result.cxMemberBirthday,
-        result.cxCompanyName,
-        result.cxDepartmentName,
-        result.cxMemberEmail,
-        ...courses.map(course => {
-          const completion = result.courses.find(
-              c => c.csCourseActiveSeq === course.csCourseActiveSeq
-                  && c.csCourseMasterSeq === course.csCourseMasterSeq);
-          if (completion) {
-            // Completion Exists
-            if (completion.csCompletionYn && completion.csCompletionYn == 'Y') {
-              // Completed
-              if (completion.cxCompletionDate) {
-                // Completion date exists
-                return course.csCmplTime;
-              } else {
-                console.error(
-                    `Completion date is missing for ${result.csMemberName} in ${course.csTitle}`);
-                return 0;
-              }
+      return [result.csMemberId, result.csMemberName,
+      result.cxMemberBirthday, result.cxCompanyName,
+      result.cxDepartmentName, result.cxMemberEmail,
+      ...courses.map(course => {
+        const completion = result.courses.find(
+          c => c.csCourseActiveSeq === course.csCourseActiveSeq
+            && c.csCourseMasterSeq === course.csCourseMasterSeq);
+        if (completion) {
+          // Completion Exists
+          if (completion.csCompletionYn && completion.csCompletionYn
+            == 'Y') {
+            // Completed
+            if (completion.cxCompletionDate) {
+              // Completion date exists
+              return course.csCmplTime;
             } else {
+              console.error(
+                `Completion date is missing for ${result.csMemberName} in ${course.csTitle}`);
               return 0;
             }
           } else {
             return 0;
           }
-        })
-      ];
-    })
-  ]);
+        } else {
+          return 0;
+        }
+      })];
+    })]);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
@@ -334,7 +310,7 @@ function saveAsXLSXWithDate(filename, results) {
   results.forEach(result => {
     result.courses.forEach(course => {
       if (!courses.some(c => c.csCourseActiveSeq === course.csCourseActiveSeq
-          && c.csCourseMasterSeq === course.csCourseMasterSeq)) {
+        && c.csCourseMasterSeq === course.csCourseMasterSeq)) {
         courses.push(course);
       }
     });
@@ -361,79 +337,57 @@ function saveAsXLSXWithDate(filename, results) {
 
     if (parts.length !== 3) {
       console.info(
-          `Invalid date format: Expected 'yyyy.MM.dd'\n Received: ${dateString}`);
+        `Invalid date format: Expected 'yyyy.MM.dd'\n Received: ${dateString}`);
       return '';
     }
 
     return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2,
-        '0')}`; // Return 'yyyy-MM-dd'
+      '0')}`; // Return 'yyyy-MM-dd'
   };
 
-  const wsData = [
-    [
-      '아이디',
-      '이름',
-      '생년월일',
-      '소속기관',
-      '부서',
-      '이메일',
-      ...courses.flatMap(course => [
-        `${course.csTitle}`,         // Course title header
-        `${course.csTitle} 시작일`,  // Study start date header
-        `${course.csTitle} 종료일`   // Study end date header
-      ])
-    ],
-    ...results.map(result => [
-      result.csMemberId,
-      result.csMemberName,
-      formatDate(result.cxMemberBirthday), // Format birthdate to 'yyyy-MM-dd'
-      result.cxCompanyName,
-      result.cxDepartmentName,
-      result.cxMemberEmail,
-      ...courses.flatMap(course => {
-        const completion = result.courses.find(
-            c => c.csCourseActiveSeq === course.csCourseActiveSeq
-                && c.csCourseMasterSeq === course.csCourseMasterSeq);
-        if (completion) {
-          return [
-            // Add course completion time
-            completion.csCompletionYn === 'Y' && completion.cxCompletionDate
-                ? course.csCmplTime : 0,
-            // Add formatted study start date
-            formatDate(course.csStudyStartDate),
-            // Add formatted study end date
-            new Date(completion.cxCompletionDate
-                - (completion.cxCompletionDate.getTimezoneOffset() * 60
-                    * 1000)).toISOString().split('T')[0]
-          ];
-        } else {
-          return [0, '', '']; // Empty if no completion
-        }
-      })
-    ])
-  ];
+  const wsData = [['아이디', '이름', '생년월일', '소속기관', '부서', '이메일', ...courses.flatMap(
+    course => [`${course.csTitle}`,         // Course title header
+    `${course.csTitle} 시작일`,  // Study start date header
+    `${course.csTitle} 종료일`   // Study end date header
+    ])], ...results.map(result => [result.csMemberId, result.csMemberName,
+    formatDate(result.cxMemberBirthday), // Format birthdate to 'yyyy-MM-dd'
+    result.cxCompanyName, result.cxDepartmentName, result.cxMemberEmail,
+    ...courses.flatMap(course => {
+      const completion = result.courses.find(
+        c => c.csCourseActiveSeq === course.csCourseActiveSeq
+          && c.csCourseMasterSeq === course.csCourseMasterSeq);
+      if (completion) {
+        return [// Add course completion time
+          completion.csCompletionYn === 'Y' && completion.cxCompletionDate
+            ? course.csCmplTime : 0, // Add formatted study start date
+          formatDate(course.csStudyStartDate), // Add formatted study end date
+          new Date(completion.cxCompletionDate
+            - (completion.cxCompletionDate.getTimezoneOffset() * 60
+              * 1000)).toISOString().split('T')[0]];
+      } else {
+        return [0, '', '']; // Empty if no completion
+      }
+    })])];
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   XLSX.writeFile(wb,
-      filename + "_수료일자포함_" + toLocalISOFormat(new Date()) + '.xlsx');
+    filename + "_수료일자포함_" + toLocalISOFormat(new Date()) + '.xlsx');
 }
 
-async function statistics(
-    input = '',
-    start = new Date(Date.UTC(new Date().getFullYear(), 0, 1)
-        + new Date().getTimezoneOffset() * 60000),
-    end = new Date(Date.UTC(new Date().getFullYear(), 11, 31)
-        + new Date().getTimezoneOffset() * 60000)
-) {
+async function statistics(input = '', start = new Date(
+  Date.UTC(new Date().getFullYear(), 0, 1) + new Date().getTimezoneOffset()
+  * 60000), end = new Date(
+    Date.UTC(new Date().getFullYear(), 11, 31) + new Date().getTimezoneOffset()
+    * 60000)) {
   // start and end date can be given as string format of local time 'yyyy.MM.dd' so it needs to be casted to Date object
   start = new Date(start);
   end = new Date(end);
   // Convert start and end to UTC fformat
   start = new Date(
-      Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()));
+    Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()));
   end = new Date(Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()));
 
   // Offset the start and end date to local time
@@ -452,11 +406,11 @@ async function statistics(
     // Course instance has 'csCmplList', an array of Completion that indicate members
     courses.forEach(course => {
       const completions = course.csCmplList.filter(
-          completion => completion.csMemberSeq === member.csMemberSeq);
+        completion => completion.csMemberSeq === member.csMemberSeq);
       completions.forEach(completion => {
         // Check if results already have the member
         let record = results.find(
-            result => result.csMemberSeq === member.csMemberSeq);
+          result => result.csMemberSeq === member.csMemberSeq);
         if (!record) {
           record = new Record(member, [course]);
           results.push(record);
@@ -516,11 +470,11 @@ function estimatedProgressTime(current, total, start, title) {
   // Show in minutes and seconds if remaining time is more than 1 minute
   if (remaining > 60000) {
     updateProgress(current / total,
-        `${title} (ETC: ${Math.floor(remaining / 60000)}m ${Math.floor(
-            (remaining % 60000) / 1000)}s)`);
+      `${title} (ETC: ${Math.floor(remaining / 60000)}m ${Math.floor(
+        (remaining % 60000) / 1000)}s)`);
   } else {
     updateProgress(current / total,
-        `${title} (ETC: ${Math.floor(remaining / 1000)}s)`);
+      `${title} (ETC: ${Math.floor(remaining / 1000)}s)`);
   }
 }
 
@@ -532,7 +486,7 @@ function estimatedProgressTime(current, total, start, title) {
 function updateProgress(percent, title) {
   // updateButton.innerHTML = `<span class=\"txt_white\">${percent}%</span>`;
   updateButton.innerHTML = `<span class=\"txt_white\">${title ? title + " : "
-      : ""}${(percent * 100).toFixed(2)}%</span>`;
+    : ""}${(percent * 100).toFixed(2)}%</span>`;
 }
 
 if (window.location.href.includes("user/member/memberList.do")) {
@@ -576,4 +530,4 @@ if (window.location.href.includes("user/member/memberList.do")) {
   }
 }
 
-export {estimatedProgressTime};
+export { estimatedProgressTime };
