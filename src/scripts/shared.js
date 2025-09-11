@@ -32,17 +32,17 @@ function customTable(data, first = 10, last = 10) {
 
   const totalLength = data.length;
   if (totalLength <= first + last) {
-    console.table(data.map((entry, index) => ({index, ...entry})));
+    console.table(data.map((entry, index) => ({ index, ...entry })));
     return;
   }
 
   const firstEntries = data.slice(0, first).map(
-      (entry, index) => ({index, ...entry}));
+    (entry, index) => ({ index, ...entry }));
   const lastEntries = data.slice(-last).map(
-      (entry, index) => ({index: totalLength - last + index, ...entry}));
+    (entry, index) => ({ index: totalLength - last + index, ...entry }));
 
   // Dynamically create a placeholder for the omitted entries
-  const placeholder = {index: '...'};
+  const placeholder = { index: '...' };
   if (firstEntries.length > 0) {
     for (const key of Object.keys(firstEntries[0])) {
       if (key !== 'index') {
@@ -67,7 +67,7 @@ function toLocalISOFormat(date) {
   const timezoneOffset = -date.getTimezoneOffset();
   const offsetSign = timezoneOffset >= 0 ? '+' : '-';
   const offsetHours = String(
-      Math.floor(Math.abs(timezoneOffset) / 60)).padStart(2, '0');
+    Math.floor(Math.abs(timezoneOffset) / 60)).padStart(2, '0');
   const offsetMinutes = String(Math.abs(timezoneOffset) % 60).padStart(2, '0');
 
   return `${localISODate}${offsetSign}${offsetHours}:${offsetMinutes}`;
@@ -107,7 +107,7 @@ function convertToLocalISOFormat(dateString) {
 function saveAsJSON(fileName, data) {
   // console.log("saveAsJSON(" + fileName + ", ... ) called");
   const fileContent = JSON.stringify(data);
-  const bb = new Blob([fileContent], {type: "text/plain"});
+  const bb = new Blob([fileContent], { type: "text/plain" });
   const a = document.createElement("a");
 
   a.download = fileName + "_" + toLocalISOFormat(new Date()) + ".json";
@@ -116,9 +116,5 @@ function saveAsJSON(fileName, data) {
 }
 
 export {
-  tokenize,
-  customTable,
-  toLocalISOFormat,
-  convertToLocalISOFormat,
-  saveAsJSON
+  tokenize, customTable, toLocalISOFormat, convertToLocalISOFormat, saveAsJSON
 };
