@@ -634,9 +634,8 @@ async function fetchCourses(action) {
         course.csCmplList = completions;
       } catch (error) {
         console.error(`[${course.csCourseActiveSeq}] Failed to process course data:`, error.message || error);
-        // Set default values for failed course
-        course.csCmplTime = 0;
-        course.csCmplList = [];
+        console.error(`[FETCH] Stopping course processing due to critical error`);
+        throw error; // Re-throw to stop the entire process
       }
     }
     console.log(`[FETCH] Processed ${courses.length} courses.`)
