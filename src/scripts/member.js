@@ -1,6 +1,9 @@
 import * as jQuery from 'jquery';
-import { getCSRFToken } from './shared.js';
+import { getCSRFToken, createLogger } from './shared.js';
 import { addData, getData, isExist, updateData } from "./storage";
+
+// Create logger for member component
+const logger = createLogger('MEMBER');
 
 /**
  * Represents a member.
@@ -86,6 +89,8 @@ class MemberRequest {
  * @throws {Error} - The error thrown when failed to fetch total active members from server.
  */
 function getActiveMemberCount() {
+  logger.debug('Fetching total count of active members from server');
+
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
@@ -101,16 +106,22 @@ function getActiveMemberCount() {
       tryCount: 0,
       retryLimit: 3,
       success: function (data) {
+        logger.info(`Successfully fetched active member count: ${data.cnt}`);
         resolve(data.cnt);
       },
       error: function (xhr, status, error) {
-        console.log(xhr);
+        logger.warn(`Request failed (attempt ${this.tryCount + 1}/${this.retryLimit + 1}): ${error}`);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
+          logger.debug('Retrying request to fetch active member count');
           jQuery.ajax(this);
         } else {
-          console.error("failed to fetch total active members from server!");
-          reject(xhr, status, error);
+          logger.error('Failed to fetch total active members from server after all retry attempts', {
+            xhr: xhr,
+            status: status,
+            error: error
+          });
+          reject(new Error(`Failed to fetch total active members: ${error}`));
         }
       }
     });
@@ -124,6 +135,8 @@ function getActiveMemberCount() {
  * @returns {Promise} - The promise object representing the active members.
  */
 function getActiveMembers(count = 10) {
+  logger.debug(`Fetching ${count} active members from server`);
+
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
@@ -139,6 +152,7 @@ function getActiveMembers(count = 10) {
       tryCount: 0,
       retryLimit: 3,
       success: function (data) {
+        logger.debug(`Processing ${data.list.length} member records`);
         const members = [];
         for (const item of data.list) {
           members.push(
@@ -147,17 +161,22 @@ function getActiveMembers(count = 10) {
               item.cxDepartmentName, item.cxDivisionCdName,
               item.csCertiType));
         }
+        logger.info(`Successfully fetched ${members.length} active members`);
         resolve(members);
       },
       error: function (xhr, status, error) {
-        console.log(xhr);
+        logger.warn(`Request failed (attempt ${this.tryCount + 1}/${this.retryLimit + 1}): ${error}`);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
+          logger.debug('Retrying request to fetch active members');
           jQuery.ajax(this);
-
         } else {
-          console.error("failed to fetch active members from server!");
-          reject(xhr, status, error);
+          logger.error('Failed to fetch active members from server after all retry attempts', {
+            xhr: xhr,
+            status: status,
+            error: error
+          });
+          reject(new Error(`Failed to fetch active members: ${error}`));
         }
       }
     });
@@ -171,29 +190,34 @@ function getActiveMembers(count = 10) {
  * @returns {Promise} - The promise object representing the processed active members.
  */
 async function fetchMembers(action) {
-  console.debug('Fetching count of active members...');
-  const activeMemberCount = await getActiveMemberCount();
-  console.debug(`Found ${activeMemberCount} active members.`);
+  logger.info(`Starting fetch members operation: ${action}`);
 
-  console.debug('Fetching active members...');
-  const members = await getActiveMembers(activeMemberCount);
-  console.debug(`Found ${members.length} active members.`);
+  try {
+    logger.debug('Fetching count of active members...');
+    const activeMemberCount = await getActiveMemberCount();
+    logger.info(`Found ${activeMemberCount} active members`);
 
-  if (action === 'add') {
-    console.debug('Adding active members to the database...');
-    await addData('members', members);
-    console.debug(
-      `Successfully added ${members.length} members to the database.`);
-  } else if (action === 'update') {
-    console.log('Updating active members in the database...');
-    await updateData('members', members);
-    console.log(
-      `Successfully updated ${members.length} members in the database.`);
-  } else {
-    throw new Error(`Unknown action: ${action}`);
+    logger.debug('Fetching active members...');
+    const members = await getActiveMembers(activeMemberCount);
+    logger.info(`Successfully fetched ${members.length} active members`);
+
+    if (action === 'add') {
+      logger.info('Adding active members to the database...');
+      await addData('members', members);
+      logger.info(`Successfully added ${members.length} members to the database`);
+    } else if (action === 'update') {
+      logger.info('Updating active members in the database...');
+      await updateData('members', members);
+      logger.info(`Successfully updated ${members.length} members in the database`);
+    } else {
+      throw new Error(`Unknown action: ${action}`);
+    }
+
+    return members;
+  } catch (error) {
+    logger.error(`Failed to fetch members with action: ${action}`, error);
+    throw error;
   }
-
-  return members;
 }
 
 /**
@@ -202,6 +226,7 @@ async function fetchMembers(action) {
  * @returns {Promise} - The promise object representing the added active members.
  */
 async function addMembers() {
+  logger.info('Initiating add members operation');
   return await fetchMembers('add');
 }
 
@@ -211,6 +236,7 @@ async function addMembers() {
  * @returns {Promise} - The promise object representing the updated active members.
  */
 async function updateMembers() {
+  logger.info('Initiating update members operation');
   return await fetchMembers('update');
 }
 
@@ -222,35 +248,52 @@ async function updateMembers() {
  * @returns {boolean} - The result indicating if the member belongs to the company.
  */
 function isBelongedToCompany(member, keyword) {
-  return (member.cxCompanyName && member.cxCompanyName.includes(keyword))
-    || (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
+  const companyMatch = member.cxCompanyName && member.cxCompanyName.includes(keyword);
+  const departmentMatch = member.cxDepartmentName && member.cxDepartmentName.includes(keyword);
+  const result = companyMatch || departmentMatch;
+
+  logger.debug(`Member ${member.csMemberId} company/department match for "${keyword}": ${result}`);
+  return result;
 }
 
 export async function searchMembers(input = '') {
-  // Get all members from the database if exists
-  const exist = await isExist('members');
-  if (!exist) {
-    await addMembers();
-  }
-  const members = await getData('members');
+  logger.info(`Searching members with input: "${input}"`);
 
-  // Split the search keywords
-  const keywords = input.split(' ');
+  try {
+    // Get all members from the database if exists
+    const exist = await isExist('members');
+    if (!exist) {
+      logger.info('Members not found in database, fetching from server');
+      await addMembers();
+    } else {
+      logger.debug('Members found in database, using cached data');
+    }
 
-  // Search for members that match the search criteria
-  const results = [];
-  for (const member of members) {
-    for (const keyword of keywords) {
-      // Search for member's attributes that match the keyword
-      if (isBelongedToCompany(member, keyword)) {
-        results.push(member);
-        break;
+    const members = await getData('members');
+    logger.debug(`Retrieved ${members.length} members from database`);
+
+    // Split the search keywords
+    const keywords = input.split(' ');
+    logger.debug(`Search keywords: ${keywords.join(', ')}`);
+
+    // Search for members that match the search criteria
+    const results = [];
+    for (const member of members) {
+      for (const keyword of keywords) {
+        // Search for member's attributes that match the keyword
+        if (isBelongedToCompany(member, keyword)) {
+          results.push(member);
+          break;
+        }
       }
     }
-  }
 
-  // Return the search results
-  return results;
+    logger.info(`Search completed, found ${results.length} matching members`);
+    return results;
+  } catch (error) {
+    logger.error('Failed to search members', error);
+    throw error;
+  }
 }
 
 export { updateMembers };
