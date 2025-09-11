@@ -261,9 +261,9 @@ function getCompletionCount(csCourseActiveSeq) {
       type: "post",
       data: new CompletionRequest(csCourseActiveSeq),
       dataType: "json",
-      timeout: 10000, // 10 seconds timeout
+      timeout: 1000, // 1 seconds timeout
       tryCount: 0,
-      retryLimit: 3,
+      retryLimit: 10,
       success: function (data) {
         resolve(data.cnt);
       },
@@ -307,9 +307,9 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
         type: "post",
         data: new CompletionRequest(Number(csCourseActiveSeq), count),
         dataType: "json",
-        timeout: 10000, // 10 seconds timeout
+        timeout: 1000, // 1 seconds timeout
         tryCount: 0,
-        retryLimit: 3,
+        retryLimit: 10,
         success: function (data) {
           resolve(data.list.map(completion => ({
             csMemberSeq: completion.csMemberSeq,
@@ -353,9 +353,9 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
         data: new ApplicationRequest(Number(csCourseActiveSeq),
           Number(csCourseMasterSeq), count),
         dataType: "json",
-        timeout: 10000, // 10 seconds timeout
+        timeout: 1000, // 1 seconds timeout
         tryCount: 0,
-        retryLimit: 3,
+        retryLimit: 10,
         success: function (data) {
           const startDateMap = new Map();
           data.list.forEach(apply => {
@@ -427,9 +427,9 @@ function getCourseClassCount(csCourseActiveSeq) {
       type: "post",
       data: request,
       dataType: "json",
-      timeout: 10000, // 10 seconds timeout
+      timeout: 1000, // 1 seconds timeout
       tryCount: 0,
-      retryLimit: 3,
+      retryLimit: 10,
       success: function (data) {
         resolve(data.list.length);
       },
@@ -475,9 +475,9 @@ function getCourseExamCount(course) {
       type: "post",
       data: request,
       dataType: "json",
-      timeout: 10000, // 10 seconds timeout
+      timeout: 1000, // 1 seconds timeout
       tryCount: 0,
-      retryLimit: 3,
+      retryLimit: 10,
       success: function (data) {
         resolve(data.list.length);
       },
@@ -516,9 +516,9 @@ function getTotalCourseCount() {
       type: "post",
       data: new CourseRequest(),
       dataType: "json",
-      timeout: 10000, // 10 seconds timeout
+      timeout: 1000, // 1 seconds timeout
       tryCount: 0,
-      retryLimit: 3,
+      retryLimit: 10,
       success: function (data) {
         resolve(data.cnt);
       },
@@ -557,9 +557,9 @@ function getCourses(count = 10) {
       type: "post",
       data: new CourseRequest(count),
       dataType: "json",
-      timeout: 10000, // 10 seconds timeout
+      timeout: 1000, // 1 seconds timeout
       tryCount: 0,
-      retryLimit: 3,
+      retryLimit: 10,
       success: function (data) {
         resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
           course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
@@ -591,61 +591,73 @@ function getCourses(count = 10) {
  * @throws {Error} - Unknown action.
  */
 async function fetchCourses(action) {
-  console.log('[FETCH] Fetching count of courses...')
-  const totalCourseCount = await getTotalCourseCount();
-  console.log(`[FETCH] Found ${totalCourseCount} courses.`)
+  try {
+    console.log('[FETCH] Fetching count of courses...')
+    const totalCourseCount = await getTotalCourseCount();
+    console.log(`[FETCH] Found ${totalCourseCount} courses.`)
 
-  console.log('[FETCH] Fetching courses...')
-  const courses = await getCourses(totalCourseCount);
-  console.log(`[FETCH] Fetched ${courses.length} courses.`)
+    console.log('[FETCH] Fetching courses...')
+    const courses = await getCourses(totalCourseCount);
+    console.log(`[FETCH] Fetched ${courses.length} courses.`)
 
-  var started = Date.now();
-  for (let i = 0; i < courses.length; i++) {
-    estimatedProgressTime(i, courses.length, started, '과정');
-    const course = courses[i];
-    console.log(`[${course.csCourseActiveSeq}] Processing course [${i
-      + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
+    var started = Date.now();
+    for (let i = 0; i < courses.length; i++) {
+      estimatedProgressTime(i, courses.length, started, '과정');
+      const course = courses[i];
+      console.log(`[${course.csCourseActiveSeq}] Processing course [${i
+        + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
 
-    console.debug(
-      `[${course.csCourseActiveSeq}] Fetching class count...`)
-    const classCount = await getCourseClassCount(course.csCourseActiveSeq);
-    const examCount = await getCourseExamCount(course);
-    console.debug(
-      `[${course.csCourseActiveSeq}] Found ${classCount} classes.`)
-    console.debug(
-      `[${course.csCourseActiveSeq}] Found ${examCount} exams.`)
-    course.csCmplTime = classCount + examCount;
+      try {
+        console.debug(
+          `[${course.csCourseActiveSeq}] Fetching class count...`)
+        const classCount = await getCourseClassCount(course.csCourseActiveSeq);
+        const examCount = await getCourseExamCount(course);
+        console.debug(
+          `[${course.csCourseActiveSeq}] Found ${classCount} classes.`)
+        console.debug(
+          `[${course.csCourseActiveSeq}] Found ${examCount} exams.`)
+        course.csCmplTime = classCount + examCount;
 
-    console.debug(
-      `[${course.csCourseActiveSeq}] Fetching completion count...`)
-    const completionCount = await getCompletionCount(course.csCourseActiveSeq);
-    console.debug(
-      `[${course.csCourseActiveSeq}] Found ${completionCount} completion records.`)
+        console.debug(
+          `[${course.csCourseActiveSeq}] Fetching completion count...`)
+        const completionCount = await getCompletionCount(course.csCourseActiveSeq);
+        console.debug(
+          `[${course.csCourseActiveSeq}] Found ${completionCount} completion records.`)
 
-    console.debug(
-      `[${course.csCourseActiveSeq}] Fetching completions...`)
-    const completions = await getCourseCompletion(course.csCourseActiveSeq,
-      course.csCourseMasterSeq,
-      completionCount);
-    console.debug(
-      `[${course.csCourseActiveSeq}] Fetched ${completions.length} completions.`)
-    course.csCmplList = completions;
+        console.debug(
+          `[${course.csCourseActiveSeq}] Fetching completions...`)
+        const completions = await getCourseCompletion(course.csCourseActiveSeq,
+          course.csCourseMasterSeq,
+          completionCount);
+        console.debug(
+          `[${course.csCourseActiveSeq}] Fetched ${completions.length} completions.`)
+        course.csCmplList = completions;
+      } catch (error) {
+        console.error(`[${course.csCourseActiveSeq}] Failed to process course data:`, error.message || error);
+        // Set default values for failed course
+        course.csCmplTime = 0;
+        course.csCmplList = [];
+      }
+    }
+    console.log(`[FETCH] Processed ${courses.length} courses.`)
+
+    if (action === 'add') {
+      console.log('[FETCH] Adding courses to database...')
+      await addData('courses', courses);
+      console.log(`[FETCH] Successfully added ${courses.length} courses to database.`)
+    } else if (action === 'update') {
+      console.log('[FETCH] Updating courses in database...')
+      await updateData('courses', courses);
+      console.log(`[FETCH] Successfully updated ${courses.length} courses in database.`)
+    } else {
+      throw new Error(`Unknown action: ${action}`);
+    }
+
+    return courses;
+  } catch (error) {
+    console.error('[FETCH] Critical error during course fetching:', error.message || error);
+    throw error;
   }
-  console.log(`[FETCH] Processed ${courses.length} courses.`)
-
-  if (action === 'add') {
-    console.log('[FETCH] Adding courses to database...')
-    await addData('courses', courses);
-    console.log(`[FETCH] Successfully added ${courses.length} courses to database.`)
-  } else if (action === 'update') {
-    console.log('[FETCH] Updating courses in database...')
-    await updateData('courses', courses);
-    console.log(`[FETCH] Successfully updated ${courses.length} courses in database.`)
-  } else {
-    throw new Error(`Unknown action: ${action}`);
-  }
-
-  return courses;
 }
 
 /**
@@ -655,7 +667,12 @@ async function fetchCourses(action) {
  * @throws {Error} - Failed to add courses to database.
  */
 async function addCourses() {
-  return await fetchCourses('add');
+  try {
+    return await fetchCourses('add');
+  } catch (error) {
+    console.error('[ADD_COURSES] Failed to add courses:', error.message || error);
+    throw new Error(`Failed to add courses to database: ${error.message || error}`);
+  }
 }
 
 /**
@@ -665,7 +682,12 @@ async function addCourses() {
  * @throws {Error} - Failed to update courses in database.
  */
 async function updateCourses() {
-  return await fetchCourses('update');
+  try {
+    return await fetchCourses('update');
+  } catch (error) {
+    console.error('[UPDATE_COURSES] Failed to update courses:', error.message || error);
+    throw new Error(`Failed to update courses in database: ${error.message || error}`);
+  }
 }
 
 /**
@@ -680,71 +702,81 @@ function isCustomCourse(course, keyword) {
 
 async function searchCustomCourses(input = '',
   year = new Date().getFullYear()) {
-  // Get all courses from the database
-  const exist = await getData('courses');
-  if (!exist) {
-    await addCourses();
-  }
-  const courses = await getData('courses');
-  customTable(courses);
-  console.log(`[SEARCH] Found ${courses.length} courses in the database.`);
+  try {
+    // Get all courses from the database
+    const exist = await getData('courses');
+    if (!exist) {
+      await addCourses();
+    }
+    const courses = await getData('courses');
+    customTable(courses);
+    console.log(`[SEARCH] Found ${courses.length} courses in the database.`);
 
-  // Split the search keywords
-  const keywords = input.split(' ');
+    // Split the search keywords
+    const keywords = input.split(' ');
 
-  // Search for courses that match the search criteria
-  const results = [];
-  for (const course of courses) {
-    for (const keyword of keywords) {
-      // Search for course's attributes that match the keyword
-      if (isCustomCourse(course, keyword) && course.csYear === year) {
-        results.push(course);
-        break;
+    // Search for courses that match the search criteria
+    const results = [];
+    for (const course of courses) {
+      for (const keyword of keywords) {
+        // Search for course's attributes that match the keyword
+        if (isCustomCourse(course, keyword) && course.csYear === year) {
+          results.push(course);
+          break;
+        }
       }
     }
+
+    // Table the search results
+    customTable(results);
+    console.log(
+      `[SEARCH] Found ${results.length} courses that match the search criteria.`);
+
+    // Return the search results
+    return results;
+  } catch (error) {
+    console.error('[SEARCH_CUSTOM] Failed to search custom courses:', error.message || error);
+    throw new Error(`Failed to search custom courses: ${error.message || error}`);
   }
-
-  // Table the search results
-  customTable(results);
-  console.log(
-    `[SEARCH] Found ${results.length} courses that match the search criteria.`);
-
-  // Return the search results
-  return results;
 }
 
 export async function searchCourses(input = '',
   year = new Date().getFullYear()) {
-  // Get all courses from the database
-  const exist = await getData('courses');
-  if (!exist) {
-    await addCourses();
-  }
-  const courses = await getData('courses');
-  // customTable(courses);
-  // console.log(`Found ${courses.length} courses in the database.`);
+  try {
+    // Get all courses from the database
+    const exist = await getData('courses');
+    if (!exist) {
+      await addCourses();
+    }
+    const courses = await getData('courses');
+    // customTable(courses);
+    // console.log(`Found ${courses.length} courses in the database.`);
 
-  // Split the search keywords
-  const keywords = input.split(' ');
+    // Split the search keywords
+    const keywords = input.split(' ');
 
-  // Search for courses that match the search criteria
-  const results = [];
-  for (const course of courses) {
-    for (const keyword of keywords) {
-      // Search for course's attributes that match the keyword
-      if (course.csTitle.includes(keyword) && course.csYear >= year) {
-        results.push(course);
-        break;
+    // Search for courses that match the search criteria
+    const results = [];
+    for (const course of courses) {
+      for (const keyword of keywords) {
+        // Search for course's attributes that match the keyword
+        if (course.csTitle.includes(keyword) && course.csYear >= year) {
+          results.push(course);
+          break;
+        }
       }
     }
+
+    // Table the search results
+    // customTable(results);
+    // console.log(`Found ${results.length} courses that match the search criteria.`);
+
+    // Return the search results
+    return results;
+  } catch (error) {
+    console.error('[SEARCH_COURSES] Failed to search courses:', error.message || error);
+    throw new Error(`Failed to search courses: ${error.message || error}`);
   }
-
-  // Table the search results
-  // customTable(results);
-  // console.log(`Found ${results.length} courses that match the search criteria.`);
-
-  // Return the search results
-  return results;
 }
 
 export { updateCourses };
