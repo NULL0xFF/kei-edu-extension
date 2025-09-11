@@ -6,6 +6,7 @@ const fs = require('fs');
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
 module.exports = {
+  mode: 'production',
   entry: './src/contentScript.js',
   output: {
     filename: 'contentScript.bundle.js',
@@ -34,6 +35,7 @@ module.exports = {
     })
   ],
   optimization: {
+    minimize: false,
     mangleExports: false
   }
 };

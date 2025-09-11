@@ -3,7 +3,7 @@
   "version": "1.5.3",
   "description": "A extension for managing Korea Environment Institute E-Learning Platform",
   "scripts": {
-    "build": "webpack --mode production",
+    "build": "webpack",
     "watch": "webpack --watch"
   },
   "author": {
