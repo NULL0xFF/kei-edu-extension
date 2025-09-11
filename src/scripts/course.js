@@ -261,20 +261,21 @@ function getCompletionCount(csCourseActiveSeq) {
       type: "post",
       data: new CompletionRequest(csCourseActiveSeq),
       dataType: "json",
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 5,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.cnt);
       },
       error: function (xhr, status, error) {
-        console.debug(xhr);
-        console.warn(`Retrying to fetch completion count... (${this.tryCount + 1}/${this.retryLimit})`);
+        console.debug(`[${csCourseActiveSeq}] Error response:`, xhr);
+        console.warn(`[${csCourseActiveSeq}] Retrying to fetch completion count... (${this.tryCount + 1}/${this.retryLimit})`);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
           jQuery.ajax(this);
         } else {
-          console.error("failed to fetch completion count from server!");
-          console.debug(csCourseActiveSeq);
+          console.error(`[${csCourseActiveSeq}] Failed to fetch completion count from server!`);
+          console.debug(`[${csCourseActiveSeq}] Course Active Seq:`, csCourseActiveSeq);
           reject(error);
         }
       }
@@ -306,8 +307,9 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
         type: "post",
         data: new CompletionRequest(Number(csCourseActiveSeq), count),
         dataType: "json",
+        timeout: 10000, // 10 seconds timeout
         tryCount: 0,
-        retryLimit: 5,
+        retryLimit: 3,
         success: function (data) {
           resolve(data.list.map(completion => ({
             csMemberSeq: completion.csMemberSeq,
@@ -321,14 +323,14 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
           })));
         },
         error: function (xhr, status, error) {
-          console.debug(xhr);
-          console.warn(`Retrying to fetch course completion... (${this.tryCount + 1}/${this.retryLimit})`);
+          console.debug(`[${csCourseActiveSeq}] Error response:`, xhr);
+          console.warn(`[${csCourseActiveSeq}] Retrying to fetch course completion... (${this.tryCount + 1}/${this.retryLimit})`);
           this.tryCount++;
           if (this.tryCount <= this.retryLimit) {
             jQuery.ajax(this);
           } else {
-            console.error("Failed to fetch course completion from server!");
-            console.debug(csCourseActiveSeq, csCourseMasterSeq);
+            console.error(`[${csCourseActiveSeq}] Failed to fetch course completion from server!`);
+            console.debug(`[${csCourseActiveSeq}] Course details:`, csCourseActiveSeq, csCourseMasterSeq);
             reject(xhr, status, error);
           }
         }
@@ -351,8 +353,9 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
         data: new ApplicationRequest(Number(csCourseActiveSeq),
           Number(csCourseMasterSeq), count),
         dataType: "json",
+        timeout: 10000, // 10 seconds timeout
         tryCount: 0,
-        retryLimit: 5,
+        retryLimit: 3,
         success: function (data) {
           const startDateMap = new Map();
           data.list.forEach(apply => {
@@ -361,14 +364,14 @@ function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
           resolve(startDateMap);
         },
         error: function (xhr, status, error) {
-          console.debug(xhr);
-          console.warn(`Retrying to fetch study start dates... (${this.tryCount + 1}/${this.retryLimit})`);
+          console.debug(`[${csCourseActiveSeq}] Error response:`, xhr);
+          console.warn(`[${csCourseActiveSeq}] Retrying to fetch study start dates... (${this.tryCount + 1}/${this.retryLimit})`);
           this.tryCount++;
           if (this.tryCount <= this.retryLimit) {
             jQuery.ajax(this);
           } else {
-            console.error("Failed to fetch study start dates from server!");
-            console.debug(csCourseActiveSeq, csCourseMasterSeq);
+            console.error(`[${csCourseActiveSeq}] Failed to fetch study start dates from server!`);
+            console.debug(`[${csCourseActiveSeq}] Course details:`, csCourseActiveSeq, csCourseMasterSeq);
             reject(xhr, status, error);
           }
         }
@@ -424,20 +427,21 @@ function getCourseClassCount(csCourseActiveSeq) {
       type: "post",
       data: request,
       dataType: "json",
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 5,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.list.length);
       },
       error: function (xhr, status, error) {
-        console.debug(xhr);
-        console.warn(`Retrying to fetch class count... (${this.tryCount + 1}/${this.retryLimit})`);
+        console.debug(`[${csCourseActiveSeq}] Error response:`, xhr);
+        console.warn(`[${csCourseActiveSeq}] Retrying to fetch class count... (${this.tryCount + 1}/${this.retryLimit})`);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
           jQuery.ajax(this);
         } else {
-          console.error("failed to fetch class count from server!");
-          console.debug(course);
+          console.error(`[${csCourseActiveSeq}] Failed to fetch class count from server!`);
+          console.debug(`[${csCourseActiveSeq}] Course Active Seq:`, csCourseActiveSeq);
           reject(xhr, status, error);
         }
       }
@@ -471,20 +475,21 @@ function getCourseExamCount(course) {
       type: "post",
       data: request,
       dataType: "json",
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 5,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.list.length);
       },
       error: function (xhr, status, error) {
-        console.warn(`Retrying to fetch exam count... (${this.tryCount + 1}/${this.retryLimit})`);
-        console.debug(xhr);
+        console.warn(`[${course.csCourseActiveSeq}] Retrying to fetch exam count... (${this.tryCount + 1}/${this.retryLimit})`);
+        console.debug(`[${course.csCourseActiveSeq}] Error response:`, xhr);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
           jQuery.ajax(this);
         } else {
-          console.error("failed to fetch exam count from server!");
-          console.debug(course)
+          console.error(`[${course.csCourseActiveSeq}] Failed to fetch exam count from server!`);
+          console.debug(`[${course.csCourseActiveSeq}] Course details:`, course)
           reject(xhr, status, error);
         }
       }
@@ -511,19 +516,20 @@ function getTotalCourseCount() {
       type: "post",
       data: new CourseRequest(),
       dataType: "json",
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 5,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.cnt);
       },
       error: function (xhr, status, error) {
-        console.warn(`Retrying to fetch course count... (${this.tryCount + 1}/${this.retryLimit})`);
-        console.debug(xhr);
+        console.warn(`[COURSE_COUNT] Retrying to fetch course count... (${this.tryCount + 1}/${this.retryLimit})`);
+        console.debug(`[COURSE_COUNT] Error response:`, xhr);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
           jQuery.ajax(this);
         } else {
-          console.error("failed to fetch course count from server!");
+          console.error("[COURSE_COUNT] Failed to fetch course count from server!");
           reject(xhr, status, error);
         }
       }
@@ -551,8 +557,9 @@ function getCourses(count = 10) {
       type: "post",
       data: new CourseRequest(count),
       dataType: "json",
+      timeout: 10000, // 10 seconds timeout
       tryCount: 0,
-      retryLimit: 5,
+      retryLimit: 3,
       success: function (data) {
         resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
           course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
@@ -562,13 +569,13 @@ function getCourses(count = 10) {
           null, course.csTitlePath, null)));
       },
       error: function (xhr, status, error) {
-        console.warn(`Retrying to fetch courses... (${this.tryCount + 1}/${this.retryLimit})`);
-        console.debug(xhr);
+        console.warn(`[COURSE_LIST] Retrying to fetch courses... (${this.tryCount + 1}/${this.retryLimit})`);
+        console.debug(`[COURSE_LIST] Error response:`, xhr);
         this.tryCount++;
         if (this.tryCount <= this.retryLimit) {
           jQuery.ajax(this);
         } else {
-          console.error("failed to fetch courses from server!");
+          console.error("[COURSE_LIST] Failed to fetch courses from server!");
           reject(xhr, status, error);
         }
       }
@@ -584,56 +591,56 @@ function getCourses(count = 10) {
  * @throws {Error} - Unknown action.
  */
 async function fetchCourses(action) {
-  console.log('Fetching count of courses...')
+  console.log('[FETCH] Fetching count of courses...')
   const totalCourseCount = await getTotalCourseCount();
-  console.log(`Found ${totalCourseCount} courses.`)
+  console.log(`[FETCH] Found ${totalCourseCount} courses.`)
 
-  console.log('Fetching courses...')
+  console.log('[FETCH] Fetching courses...')
   const courses = await getCourses(totalCourseCount);
-  console.log(`Fetched ${courses.length} courses.`)
+  console.log(`[FETCH] Fetched ${courses.length} courses.`)
 
   var started = Date.now();
   for (let i = 0; i < courses.length; i++) {
     estimatedProgressTime(i, courses.length, started, '과정');
     const course = courses[i];
-    console.log(`Processing course [${i
+    console.log(`[${course.csCourseActiveSeq}] Processing course [${i
       + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
 
     console.debug(
-      `Fetching class count for course ${course.csCourseActiveSeq}...`)
+      `[${course.csCourseActiveSeq}] Fetching class count...`)
     const classCount = await getCourseClassCount(course.csCourseActiveSeq);
     const examCount = await getCourseExamCount(course);
     console.debug(
-      `Found ${classCount} classes for course ${course.csCourseActiveSeq}.`)
+      `[${course.csCourseActiveSeq}] Found ${classCount} classes.`)
     console.debug(
-      `Found ${examCount} exams for course ${course.csCourseActiveSeq}.`)
+      `[${course.csCourseActiveSeq}] Found ${examCount} exams.`)
     course.csCmplTime = classCount + examCount;
 
     console.debug(
-      `Fetching completion count for course ${course.csCourseActiveSeq}...`)
+      `[${course.csCourseActiveSeq}] Fetching completion count...`)
     const completionCount = await getCompletionCount(course.csCourseActiveSeq);
     console.debug(
-      `Found ${completionCount} completion records for course ${course.csCourseActiveSeq}.`)
+      `[${course.csCourseActiveSeq}] Found ${completionCount} completion records.`)
 
     console.debug(
-      `Fetching completions for course ${course.csCourseActiveSeq}...`)
+      `[${course.csCourseActiveSeq}] Fetching completions...`)
     const completions = await getCourseCompletion(course.csCourseActiveSeq,
       course.csCourseMasterSeq,
       completionCount);
     console.debug(
-      `Fetched ${completions.length} completions for course ${course.csCourseActiveSeq}.`)
+      `[${course.csCourseActiveSeq}] Fetched ${completions.length} completions.`)
     course.csCmplList = completions;
   }
-  console.log(`Processed ${courses.length} courses.`)
+  console.log(`[FETCH] Processed ${courses.length} courses.`)
 
   if (action === 'add') {
-    console.log('Adding courses to database...')
+    console.log('[FETCH] Adding courses to database...')
     await addData('courses', courses);
-    console.log(`Successfully added ${courses.length} courses to database.`)
+    console.log(`[FETCH] Successfully added ${courses.length} courses to database.`)
   } else if (action === 'update') {
-    console.log('Updating courses in database...')
+    console.log('[FETCH] Updating courses in database...')
     await updateData('courses', courses);
-    console.log(`Successfully updated ${courses.length} courses in database.`)
+    console.log(`[FETCH] Successfully updated ${courses.length} courses in database.`)
   } else {
     throw new Error(`Unknown action: ${action}`);
   }
@@ -680,7 +687,7 @@ async function searchCustomCourses(input = '',
   }
   const courses = await getData('courses');
   customTable(courses);
-  console.log(`Found ${courses.length} courses in the database.`);
+  console.log(`[SEARCH] Found ${courses.length} courses in the database.`);
 
   // Split the search keywords
   const keywords = input.split(' ');
@@ -700,7 +707,7 @@ async function searchCustomCourses(input = '',
   // Table the search results
   customTable(results);
   console.log(
-    `Found ${results.length} courses that match the search criteria.`);
+    `[SEARCH] Found ${results.length} courses that match the search criteria.`);
 
   // Return the search results
   return results;
