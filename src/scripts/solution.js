@@ -2,7 +2,7 @@ import Logger from './logger.js';
 import * as Course from './course.js';
 import * as Member from './member.js';
 import * as Utility from './utility.js';
-import {addData} from "./storage";
+import { addData } from "./storage";
 
 const logger = new Logger('solution');
 
@@ -61,31 +61,42 @@ class Record {
   }
 }
 
-async function updateCourses({signal}) {
+async function updateCourses({ signal }) {
   try {
     logger.info('Starting course update', 'updateCourses');
 
-    const totalCourses = await Course.getTotalCourseCount({signal});
+    const totalCourses = await Course.getTotalCourseCount({ signal });
     logger.debug(`Total course count fetched: ${totalCourses}`, 'updateCourses');
 
-    const courses = await Course.getAllCourses({signal}, totalCourses);
+    const courses = await Course.getAllCourses({ signal }, totalCourses);
     logger.debug(`Fetched ${courses.length} courses`, 'updateCourses');
 
     for (const course of courses) {
-      const totalChapters = await Course.getCourseChapterCount({signal}, course.csCourseActiveSeq);
-      const totalExams = await Course.getCourseExamCount({signal}, course.csCourseActiveSeq);
-      course.csCmplTime = totalChapters + totalExams;
+      let isTimedout = false;
+      do {
+        try {
+          const totalChapters = await Course.getCourseChapterCount({ signal }, course.csCourseActiveSeq);
+          const totalExams = await Course.getCourseExamCount({ signal }, course.csCourseActiveSeq);
+          course.csCmplTime = totalChapters + totalExams;
 
-      const totalCompletions = await Course.getCompletionCount({signal}, course.csCourseActiveSeq);
-      const completions = await Course.getAllCompletions({signal}, course.csCourseActiveSeq, course.csCourseMasterSeq, totalCompletions);
-      course.csCmplList = completions;
-      if (completions.length !== totalCompletions) {
-        logger.warn(`[${course.csCourseActiveSeq}] Mismatch in completions: expected ${totalCompletions}, got ${completions.length}`, 'updateCourses');
-      }
+          const totalCompletions = await Course.getCompletionCount({ signal }, course.csCourseActiveSeq);
+          const completions = await Course.getAllCompletions({ signal }, course.csCourseActiveSeq, course.csCourseMasterSeq, totalCompletions);
+          course.csCmplList = completions;
+          if (completions.length !== totalCompletions) {
+            logger.warn(`[${course.csCourseActiveSeq}] Mismatch in completions: expected ${totalCompletions}, got ${completions.length}`, 'updateCourses');
+          }
 
-      logger.debug(`[${course.csCourseActiveSeq}] Processed "${course.csTitle}"`);
+          logger.debug(`[${course.csCourseActiveSeq}] Processed "${course.csTitle}"`);
 
-      await Utility.sleep(100);
+          await Utility.sleep(100);
+        } catch (error) {
+          // if error is 'timeout', retry
+          if (error === 'timeout') {
+            isTimedout = true;
+            logger.warn(`[${course.csCourseActiveSeq}] Timeout occurred, retrying...`, 'updateCourses');
+          }
+        }
+      } while (isTimedout);
     }
     logger.debug(`All courses processed`, 'updateCourses');
 
@@ -102,14 +113,14 @@ async function updateCourses({signal}) {
   }
 }
 
-async function updateMembers({signal}) {
+async function updateMembers({ signal }) {
   try {
     logger.info('Starting member update', 'updateMembers');
 
-    const totalMembers = await Member.getActiveMemberCount({signal});
+    const totalMembers = await Member.getActiveMemberCount({ signal });
     logger.debug(`Total active member count fetched: ${totalMembers}`, 'updateMembers');
 
-    const members = await Member.getActiveMembers({signal}, totalMembers);
+    const members = await Member.getActiveMembers({ signal }, totalMembers);
     logger.debug(`Fetched ${members.length} active members`, 'updateMembers');
 
     await addData('members', members);
@@ -260,9 +271,9 @@ async function onUpdateButtonClick(event) {
 
   try {
     event.target.innerHTML = '<span class="txt_white">회원정보...</span>';
-    await updateMembers({signal});
+    await updateMembers({ signal });
     event.target.innerHTML = '<span class="txt_white">과정정보...</span>';
-    await updateCourses({signal});
+    await updateCourses({ signal });
   } catch (error) {
     if (error?.name === 'AbortError') {
       logger.warn('Update process aborted', 'onUpdateButtonClick');

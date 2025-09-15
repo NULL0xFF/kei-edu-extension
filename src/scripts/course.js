@@ -259,7 +259,7 @@ async function getTotalCourseCount({signal}) {
     },
     contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
     data: jQuery.param(payload, true)
-  }, {signal, timeout: 500, retries: 15});
+  }, {signal, timeout: 1000, retries: 15});
 
   const count = Number(response?.cnt);
 
@@ -321,7 +321,7 @@ async function getCourseChapterCount({signal}, csCourseActiveSeq) {
     data: jQuery.param(payload, true)
   }, {
     signal,
-    timeout: 500,
+    timeout: 1000,
     retries: 15,
     retryInitialDelayMs: 1000,
     retryFactor: 2,
@@ -358,7 +358,7 @@ async function getCourseExamCount({signal}, csCourseActiveSeq) {
     data: jQuery.param(payload, true)
   }, {
     signal,
-    timeout: 500,
+    timeout: 1000,
     retries: 15,
     retryInitialDelayMs: 1000,
     retryFactor: 2,
@@ -390,7 +390,7 @@ async function getCompletionCount({signal}, csCourseActiveSeq) {
     data: jQuery.param(payload, true)
   }, {
     signal,
-    timeout: 500,
+    timeout: 1000,
     retries: 15,
     retryInitialDelayMs: 1000,
     retryFactor: 2,
@@ -422,7 +422,7 @@ async function getAllCompletions({signal}, csCourseActiveSeq, csCourseMasterSeq,
     data: jQuery.param(listPayload, true)
   }, {
     signal,
-    timeout: 500,
+    timeout: 1000,
     retries: 15,
     retryInitialDelayMs: 1000,
     retryFactor: 2,
@@ -452,7 +452,7 @@ async function getAllCompletions({signal}, csCourseActiveSeq, csCourseMasterSeq,
     data: jQuery.param(appPayload, true)
   }, {
     signal,
-    timeout: 500,
+    timeout: 1000,
     retries: 15,
     retryInitialDelayMs: 1000,
     retryFactor: 2,
