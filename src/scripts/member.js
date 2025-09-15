@@ -1,3 +1,4 @@
+import * as jQuery from 'jquery';
 import Logger from './logger.js';
 import {getData, isExist} from './storage.js';
 import {ajaxJSON, getCSRFToken} from './utility.js';

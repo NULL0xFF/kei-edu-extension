@@ -1,4 +1,5 @@
-import * as XLSX from "xlsx";
+import $ from 'jquery';
+import * as XLSX from 'xlsx';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -30,7 +31,7 @@ function ajaxJSON(opts, {
     };
     if (signal) {
       if (signal.aborted) return abort();
-      signal.addEventListener('abort', abort, {once: true});
+      signal.addEventListener('abort', abort, { once: true });
     }
 
     const run = async () => {
@@ -38,7 +39,7 @@ function ajaxJSON(opts, {
         ...opts,
         dataType: opts.dataType || 'json',
         timeout,
-        xhrFields: {withCredentials},
+        xhrFields: { withCredentials },
       })
         .done(data => resolve(data))
         .fail(async (jqXHR, textStatus, errorThrown) => {
@@ -94,7 +95,7 @@ function toLocalISOFormat(date) {
 
 function saveAsJSON(fileName, data) {
   const fileContent = JSON.stringify(data);
-  const bb = new Blob([fileContent], {type: "text/plain"});
+  const bb = new Blob([fileContent], { type: "text/plain" });
   const a = document.createElement("a");
 
   a.download = fileName + "_" + toLocalISOFormat(new Date()) + ".json";
@@ -115,8 +116,8 @@ function saveAsCSV(filename, results) {
 
   const csv = `${['아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
     ...courses.map(course => `${course.csTitle}`)].join(',')}\n${results.map(
-    result => {
-      return `${[result.csMemberId, result.csMemberName,
+      result => {
+        return `${[result.csMemberId, result.csMemberName,
         result.cxMemberBirthday, result.cxCompanyName,
         result.cxDepartmentName, result.cxMemberEmail,
         ...courses.map(course => {
@@ -144,11 +145,11 @@ function saveAsCSV(filename, results) {
             return 0;
           }
         })].join(',')}`;
-    }).join('\n')}`;
+      }).join('\n')}`;
 
   // Add BOM for UTF-8 encoding
   const bom = '\uFEFF';
-  const blob = new Blob([bom + csv], {type: 'text/csv;charset=utf-8;'});
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -185,35 +186,35 @@ function saveAsXLSX(filename, results) {
   const ws = XLSX.utils.json_to_sheet(
     [['아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
       ...courses.map(course => `${course.csTitle}`)],
-      ...results.map(result => {
-        return [result.csMemberId, result.csMemberName,
-          result.cxMemberBirthday, result.cxCompanyName,
-          result.cxDepartmentName, result.cxMemberEmail,
-          ...courses.map(course => {
-            const completion = result.courses.find(
-              c => c.csCourseActiveSeq === course.csCourseActiveSeq
-                && c.csCourseMasterSeq === course.csCourseMasterSeq);
-            if (completion) {
-              // Completion Exists
-              if (completion.csCompletionYn && completion.csCompletionYn
-                === 'Y') {
-                // Completed
-                if (completion.cxCompletionDate) {
-                  // Completion date exists
-                  return course.csCmplTime;
-                } else {
-                  console.error(
-                    `Completion date is missing for ${result.csMemberName} in ${course.csTitle}`);
-                  return 0;
-                }
-              } else {
-                return 0;
-              }
+    ...results.map(result => {
+      return [result.csMemberId, result.csMemberName,
+      result.cxMemberBirthday, result.cxCompanyName,
+      result.cxDepartmentName, result.cxMemberEmail,
+      ...courses.map(course => {
+        const completion = result.courses.find(
+          c => c.csCourseActiveSeq === course.csCourseActiveSeq
+            && c.csCourseMasterSeq === course.csCourseMasterSeq);
+        if (completion) {
+          // Completion Exists
+          if (completion.csCompletionYn && completion.csCompletionYn
+            === 'Y') {
+            // Completed
+            if (completion.cxCompletionDate) {
+              // Completion date exists
+              return course.csCmplTime;
             } else {
+              console.error(
+                `Completion date is missing for ${result.csMemberName} in ${course.csTitle}`);
               return 0;
             }
-          })];
-      })]);
+          } else {
+            return 0;
+          }
+        } else {
+          return 0;
+        }
+      })];
+    })]);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
@@ -262,8 +263,8 @@ function saveAsXLSXWithDate(filename, results) {
 
   const wsData = [['아이디', '이름', '생년월일', '소속기관', '부서', '이메일', ...courses.flatMap(
     course => [`${course.csTitle}`,         // Course title header
-      `${course.csTitle} 시작일`,  // Study start date header
-      `${course.csTitle} 종료일`   // Study end date header
+    `${course.csTitle} 시작일`,  // Study start date header
+    `${course.csTitle} 종료일`   // Study end date header
     ])], ...results.map(result => [result.csMemberId, result.csMemberName,
     formatDate(result.cxMemberBirthday), // Format birthdate to 'yyyy-MM-dd'
     result.cxCompanyName, result.cxDepartmentName, result.cxMemberEmail,
