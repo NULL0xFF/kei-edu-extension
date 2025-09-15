@@ -1,49 +1,48 @@
-/**
- * @file storage.js
- * @description This file contains the functions to interact with the IndexedDB database.
- */
+import Logger from './logger.js';
+
+const logger = new Logger('storage');
 
 /**
- * Initialize the IndexedDB database.
- * @returns {Promise<IDBDatabase>} The IndexedDB database
+ * IndexedDB 데이터베이스 초기화
+ * @returns {Promise<IDBDatabase>} IndexedDB 데이터베이스 객체
  * @async
  */
 async function initDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('MyDB', 1);
+    const request = indexedDB.open('kei-edu-extension', 1);
     request.onerror = reject;
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      db.createObjectStore('data', { keyPath: 'id' });
+      db.createObjectStore('data', {keyPath: 'id'});
     };
+    logger.debug('Initialized IndexedDB database');
   });
 }
 
 /**
- * Add data to the IndexedDB database.
- * @param {string} id The ID of the data
- * @param {Array<Object>} data The data to add
- * @async
+ * IndexedDB에 데이터 추가
+ * @param id
+ * @param value
+ * @returns {Promise<void>}
  */
 async function addData(id, value) {
-  console.debug(`Adding data to IndexedDB with ID: ${id}`);
-  // console.debug(`Data: ${JSON.stringify(value)}`);
+  logger.debug(`Adding data to IndexedDB with ID: ${id}`);
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readwrite');
   const store = transaction.objectStore('data');
-  await store.add({ id, value });
-  console.debug(`Successfully added data with ID: ${id}`);
+  store.add({id, value});
+  logger.debug(`Successfully added data with ID: ${id}`);
 }
 
 /**
- * Retrieve data from the IndexedDB database.
- * @param {string} id The ID of the data
- * @returns {Promise<Object>} The data
+ * IndexedDB에서 데이터 조회
+ * @param {string} id 데이터 ID
+ * @returns {Promise<Object>} 조회된 데이터
  * @async
  */
 async function getData(id) {
-  console.debug(`Retrieving data from IndexedDB with ID: ${id}`);
+  logger.debug(`Retrieving data from IndexedDB with ID: ${id}`);
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readonly');
   const store = transaction.objectStore('data');
@@ -56,44 +55,43 @@ async function getData(id) {
 }
 
 /**
- * Update data in the IndexedDB database.
- * @param {string} id The ID of the data
- * @param {Array<Object>} value The new data to update
+ * IndexedDB 데이터 업데이트
+ * @param {string} id 데이터 ID
+ * @param {Array<Object>} value 업데이트할 데이터
  * @async
  */
 async function updateData(id, value) {
-  console.debug(`Updating data in IndexedDB with ID: ${id}`);
-  // console.debug(`New data: ${JSON.stringify(value)}`);
+  logger.debug(`Updating data in IndexedDB with ID: ${id}`);
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readwrite');
   const store = transaction.objectStore('data');
-  const data = { id, value };
-  await store.put(data);
-  console.debug(`Successfully updated data with ID: ${id}`);
+  const data = {id, value};
+  store.put(data);
+  logger.debug(`Successfully updated data with ID: ${id}`);
 }
 
 /**
- * Delete data from the IndexedDB database.
- * @param {string} id The ID of the data
+ * IndexedDB에서 데이터 삭제
+ * @param {string} id 데이터 ID
  * @async
  */
 async function deleteData(id) {
-  console.debug(`Deleting data from IndexedDB with ID: ${id}`);
+  logger.debug(`Deleting data from IndexedDB with ID: ${id}`);
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readwrite');
   const store = transaction.objectStore('data');
-  await store.delete(id);
-  console.debug(`Successfully deleted data with ID: ${id}`);
+  store.delete(id);
+  logger.debug(`Successfully deleted data with ID: ${id}`);
 }
 
 /**
- * Check if data exists in the IndexedDB database.
- * @param {string} id The ID of the data
- * @returns {Promise<boolean>} Whether the data exists
+ * IndexedDB에 데이터 존재 여부 확인
+ * @param {string} id 데이터 ID
+ * @returns {Promise<boolean>} 존재 여부
  * @async
  */
 async function isExist(id) {
-  console.debug(`Checking if data exists in IndexedDB with ID: ${id}`);
+  logger.debug(`Checking if data exists in IndexedDB with ID: ${id}`);
   const db = await initDB();
   const transaction = db.transaction(['data'], 'readonly');
   const store = transaction.objectStore('data');
@@ -104,4 +102,10 @@ async function isExist(id) {
   });
 }
 
-export { addData, getData, updateData, deleteData, isExist };
+export {
+  addData,
+  getData,
+  updateData,
+  deleteData,
+  isExist
+}

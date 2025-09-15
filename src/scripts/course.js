@@ -1,7 +1,9 @@
 import * as jQuery from 'jquery';
-import { customTable, getCSRFToken } from './shared.js';
-import { addData, getData, updateData } from "./storage";
-import { estimatedProgressTime } from "./solution";
+import Logger from './logger.js';
+import {getData} from "./storage";
+import {ajaxJSON, getCSRFToken} from "./utility";
+
+const logger = new Logger('course');
 
 /**
  * Represents a completion.
@@ -26,7 +28,7 @@ import { estimatedProgressTime } from "./solution";
  */
 class Completion {
   constructor(csMemberSeq, csMemberId, csMemberName, cxMemberEmail,
-    csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
+              csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
     this.csMemberSeq = csMemberSeq;
     this.csMemberId = csMemberId;
     this.csMemberName = csMemberName;
@@ -54,6 +56,10 @@ class Completion {
       return null;
     }
 
+    if (cxCompletionDate instanceof Date) {
+      return cxCompletionDate;
+    }
+
     // Get the timezone offset.
     const timezoneOffset = new Date().getTimezoneOffset() * 60000;
 
@@ -65,9 +71,9 @@ class Completion {
     const minute = cxCompletionDate.substring(10, 12);
     const second = cxCompletionDate.substring(12, 14);
 
-    // Return the formatted date.
-    return new Date(
-      Date.UTC(year, month - 1, day, hour, minute, second) + timezoneOffset);
+    cxCompletionDate = new Date(Date.UTC(year, month - 1, day, hour, minute, second) + timezoneOffset);
+
+    return cxCompletionDate;
   }
 }
 
@@ -166,9 +172,9 @@ class Course {
   }
 
   constructor(csCourseActiveSeq, csCourseMasterSeq, csTitle, csStatusCd,
-    csCourseTypeCd, csYear, csApplyStartDate, csApplyEndDate,
-    csStudyStartDate, csStudyEndDate, csOpenStartDate, csOpenEndDate,
-    csCmplTime, csTitlePath, csCmplList = []) {
+              csCourseTypeCd, csYear, csApplyStartDate, csApplyEndDate,
+              csStudyStartDate, csStudyEndDate, csOpenStartDate, csOpenEndDate,
+              csCmplTime, csTitlePath, csCmplList = []) {
     this.csCourseActiveSeq = csCourseActiveSeq; // Class Unique Identifier
     this.csCourseMasterSeq = csCourseMasterSeq; // Class Creation Group, Master Identifier
     this.csTitle = csTitle;
@@ -241,463 +247,239 @@ class CourseRequest {
   }
 }
 
-/**
- * Fetches the total number of completion records for a course.
- * @function getCompletionCount
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @returns {Promise<number>} - The total number of completion records.
- * @throws {Error} - The error that occurred while fetching the completion records.
- */
-function getCompletionCount(csCourseActiveSeq) {
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/course/cmpl/selectCmplList.do",
-      type: "post",
-      data: new CompletionRequest(csCourseActiveSeq),
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.cnt);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          reject(error);
-        }
-      }
-    });
-  });
+async function getTotalCourseCount({signal}) {
+  const csrf = getCSRFToken();
+  const payload = new CourseRequest();
+
+  const response = await ajaxJSON({
+    url: '/course/active/selectActiveOperList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(payload, true)
+  }, {signal, timeout: 500, retries: 6});
+
+  const count = Number(response?.cnt);
+
+  if (!Number.isFinite(count)) {
+    logger.error(`Invalid response: expected numeric "cnt", got ${JSON.stringify(response)}`, 'getTotalCourseCount');
+    throw new Error('Invalid response');
+  }
+
+  return count;
 }
 
 /**
- * Fetches the completion records for a course.
- * @function getCourseCompletion
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @param {string} csCourseMasterSeq - The course master sequence.
- * @param {number} count - The number of completion records to return.
- * @returns {Promise<Completion[]>} - The completion records.
- * @throws {Error} - The error that occurred while fetching the completion records.
+ * Fetches all courses based on the provided count.
+ *
+ * @param signal
+ * @param count - The number of courses to fetch.
+ * @returns {Promise<Course[]>} - A promise that resolves to an array of Course objects.
  */
-function getCourseCompletion(csCourseActiveSeq, csCourseMasterSeq, count) {
-  // Function to fetch the completion list
-  function fetchCompletionList() {
-    return new Promise((resolve, reject) => {
-      jQuery.ajax({
-        headers: {
-          'X-CSRF-TOKEN': getCSRFToken()
-        },
-        xhrFields: {
-          withCredentials: true // Include cookies in the request
-        },
-        url: "/course/cmpl/selectCmplList.do",
-        type: "post",
-        data: new CompletionRequest(Number(csCourseActiveSeq), count),
-        dataType: "json",
-        tryCount: 0,
-        retryLimit: 3,
-        success: function (data) {
-          resolve(data.list.map(completion => ({
-            csMemberSeq: completion.csMemberSeq,
-            csMemberId: completion.csMemberId,
-            csMemberName: completion.csMemberName,
-            cxMemberEmail: completion.cxMemberEmail,
-            csApplyStatusCd: completion.csApplyStatusCd,
-            csStudyStartDate: '', // Initially empty
-            csCompletionYn: completion.csCompletionYn,
-            cxCompletionDate: completion.cxCompletionDate
-          })));
-        },
-        error: function (xhr, status, error) {
-          console.log(xhr);
-          this.tryCount++;
-          if (this.tryCount <= this.retryLimit) {
-            jQuery.ajax(this);
-          } else {
-            console.error("Failed to fetch course completion from server!");
-            reject(xhr, status, error);
-          }
-        }
-      });
-    });
-  }
+async function getAllCourses({signal}, count) {
+  const csrf = getCSRFToken();
+  const payload = new CourseRequest(count);
 
-  // Function to fetch the study start dates
-  function fetchStudyStartDates() {
-    return new Promise((resolve, reject) => {
-      jQuery.ajax({
-        headers: {
-          'X-CSRF-TOKEN': getCSRFToken()
-        },
-        xhrFields: {
-          withCredentials: true // Include cookies in the request
-        },
-        url: "/course/apply/selectApplyList.do",
-        type: "post",
-        data: new ApplicationRequest(Number(csCourseActiveSeq),
-          Number(csCourseMasterSeq), count),
-        dataType: "json",
-        tryCount: 0,
-        retryLimit: 3,
-        success: function (data) {
-          const startDateMap = new Map();
-          data.list.forEach(apply => {
-            startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
-          });
-          resolve(startDateMap);
-        },
-        error: function (xhr, status, error) {
-          console.log(xhr);
-          this.tryCount++;
-          if (this.tryCount <= this.retryLimit) {
-            jQuery.ajax(this);
-          } else {
-            console.error("Failed to fetch study start dates from server!");
-            reject(xhr, status, error);
-          }
-        }
-      });
-    });
-  }
+  const response = await ajaxJSON({
+    url: '/course/active/selectActiveOperList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(payload, true)
+  }, {signal, timeout: 20000, retries: 3});
 
-  // Combine the results of both AJAX calls
-  return Promise.all([fetchCompletionList(), fetchStudyStartDates()])
-    .then(([completionList, startDateMap]) => {
-      // Fill in the missing csStudyStartDate
-      return completionList.map(completion => {
-        return new Completion(completion.csMemberSeq, completion.csMemberId,
-          completion.csMemberName, completion.cxMemberEmail,
-          completion.csApplyStatusCd,
-          startDateMap.get(completion.csMemberSeq) || '', // Use the study start date from the map or default to ''
-          completion.csCompletionYn, completion.cxCompletionDate);
-      });
-    })
-    .catch(error => {
-      console.error('Error fetching course completion:', error);
-      throw error; // Re-throw the error to ensure the promise is rejected
-    });
+  const courses = response?.list.map(course => new Course(course.csCourseActiveSeq,
+    course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
+    course.csCourseTypeCd, course.csYear, course.csApplyStartDate,
+    course.csApplyEndDate, course.csStudyStartDate,
+    course.csStudyEndDate, course.csOpenStartDate, course.csOpenEndDate,
+    null, course.csTitlePath, null));
+
+  return courses;
 }
 
-/**
- * Fetches the total number of course classes for a course.
- * @function getCourseClassCount
- * @param {string} csCourseActiveSeq - The course active sequence.
- * @returns {Promise<number>} - The total number of course classes.
- * @throws {Error} - The error that occurred while fetching the course classes.
- */
-function getCourseClassCount(csCourseActiveSeq) {
-  const request = {
+async function getCourseChapterCount({signal}, csCourseActiveSeq) {
+  const csrf = getCSRFToken();
+  const payload = {
     csCourseActiveSeq: csCourseActiveSeq,
     csReferenceTypeCd: 'organization',
     dspMenuId: 'MG0005',
     dspLinkMenuId: 'MG0005'
   }
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/course/active/selectAtiveElementList.do",
-      type: "post",
-      data: request,
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.list.length);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch class count from server!");
-          reject(xhr, status, error);
-        }
-      }
-    });
+
+  const response = await ajaxJSON({
+    url: '/course/active/selectAtiveElementList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(payload, true)
+  }, {
+    signal,
+    timeout: 500,
+    retries: 6,
+    retryInitialDelayMs: 1000,
+    retryFactor: 2,
+    retryCapMs: 16000,
+    totalBudgetMs: 60000
   });
+
+  const count = Number(response?.list?.length);
+
+  if (!Number.isFinite(count)) {
+    logger.error(`Invalid response: expected numeric "list.length", got ${JSON.stringify(response)}`, 'getCourseChapterCount');
+    throw new Error('Invalid response');
+  }
+
+  return count;
 }
 
-/**
- * Fetches exam information for a course.
- * @function getCourseExamCount
- * @param {Course} course - The course.
- * @returns {Promise<number>} - The total number of exams.
- * @throws {Error} - The error that occurred while fetching the exams.
- */
-function getCourseExamCount(course) {
-  const request = {
-    csCourseActiveSeq: course.csCourseActiveSeq,
+async function getCourseExamCount({signal}, csCourseActiveSeq) {
+  const csrf = getCSRFToken();
+  const payload = {
+    csCourseActiveSeq: csCourseActiveSeq,
     csReferenceTypeCd: 'exam',
     dspMenuId: 'MG0005',
     dspLinkMenuId: 'MG0005'
   }
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/course/active/selectAtiveElementList.do",
-      type: "post",
-      data: request,
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.list.length);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch class count from server!");
-          reject(xhr, status, error);
-        }
-      }
-    });
+
+  const response = await ajaxJSON({
+    url: '/course/active/selectAtiveElementList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(payload, true)
+  }, {
+    signal,
+    timeout: 500,
+    retries: 6,
+    retryInitialDelayMs: 1000,
+    retryFactor: 2,
+    retryCapMs: 16000,
+    totalBudgetMs: 60000
   });
+
+  const count = Number(response?.list?.length);
+
+  if (!Number.isFinite(count)) {
+    logger.error(`Invalid response: expected numeric "list.length", got ${JSON.stringify(response)}`, 'getCourseChapterCount');
+    throw new Error('Invalid response');
+  }
+
+  return count;
 }
 
-/**
- * Fetches the total number of courses from the server.
- * @function getTotalCourseCount
- * @returns {Promise<number>} - The total number of courses.
- * @throws {Error} - Failed to fetch course count from server.
- */
-function getTotalCourseCount() {
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/course/active/selectActiveOperList.do",
-      type: "post",
-      data: new CourseRequest(),
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.cnt);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch course count from server!");
-          reject(xhr, status, error);
-        }
-      }
-    });
-  })
-}
+async function getCompletionCount({signal}, csCourseActiveSeq) {
+  const csrf = getCSRFToken();
+  const payload = new CompletionRequest(csCourseActiveSeq);
 
-/**
- * Fetches the courses from the server.
- * @function getCourses
- * @param {number} count - The number of courses to return.
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Failed to fetch courses from server.
- */
-function getCourses(count = 10) {
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/course/active/selectActiveOperList.do",
-      type: "post",
-      data: new CourseRequest(count),
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.list.map(course => new Course(course.csCourseActiveSeq,
-          course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
-          course.csCourseTypeCd, course.csYear, course.csApplyStartDate,
-          course.csApplyEndDate, course.csStudyStartDate,
-          course.csStudyEndDate, course.csOpenStartDate, course.csOpenEndDate,
-          null, course.csTitlePath, null)));
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch courses from server!");
-          reject(xhr, status, error);
-        }
-      }
-    });
+  const response = await ajaxJSON({
+    url: '/course/cmpl/selectCmplList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(payload, true)
+  }, {
+    signal,
+    timeout: 500,
+    retries: 6,
+    retryInitialDelayMs: 1000,
+    retryFactor: 2,
+    retryCapMs: 16000,
+    totalBudgetMs: 60000
   });
-}
 
-/**
- * Fetch the courses from the server and add them to the database.
- * @function fetchCourses
- * @param {string} action - The action to perform on the courses.
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Unknown action.
- */
-async function fetchCourses(action) {
-  console.log('Fetching count of courses...')
-  const totalCourseCount = await getTotalCourseCount();
-  console.log(`Found ${totalCourseCount} courses.`)
+  const count = Number(response?.cnt);
 
-  console.log('Fetching courses...')
-  const courses = await getCourses(totalCourseCount);
-  console.log(`Fetched ${courses.length} courses.`)
-
-  var started = Date.now();
-  for (let i = 0; i < courses.length; i++) {
-    estimatedProgressTime(i, courses.length, started, '과정');
-    const course = courses[i];
-    console.log(`Processing course [${i
-      + 1} / ${courses.length}] ${course.csYear} ${course.csTitle}...`);
-
-    console.debug(
-      `Fetching class count for course ${course.csCourseActiveSeq}...`)
-    const classCount = await getCourseClassCount(course.csCourseActiveSeq);
-    const examCount = await getCourseExamCount(course);
-    console.debug(
-      `Found ${classCount} classes for course ${course.csCourseActiveSeq}.`)
-    console.debug(
-      `Found ${examCount} exams for course ${course.csCourseActiveSeq}.`)
-    course.csCmplTime = classCount + examCount;
-
-    console.debug(
-      `Fetching completion count for course ${course.csCourseActiveSeq}...`)
-    const completionCount = await getCompletionCount(course.csCourseActiveSeq);
-    console.debug(
-      `Found ${completionCount} completion records for course ${course.csCourseActiveSeq}.`)
-
-    console.debug(
-      `Fetching completions for course ${course.csCourseActiveSeq}...`)
-    const completions = await getCourseCompletion(course.csCourseActiveSeq,
-      course.csCourseMasterSeq, completionCount);
-    console.debug(
-      `Fetched ${completions.length} completions for course ${course.csCourseActiveSeq}.`)
-    course.csCmplList = completions;
-  }
-  console.log(`Processed ${courses.length} courses.`)
-
-  if (action === 'add') {
-    console.log('Adding courses to database...')
-    await addData('courses', courses);
-    console.log(`Successfully added ${courses.length} courses to database.`)
-  } else if (action === 'update') {
-    console.log('Updating courses in database...')
-    await updateData('courses', courses);
-    console.log(`Successfully updated ${courses.length} courses in database.`)
-  } else {
-    throw new Error(`Unknown action: ${action}`);
+  if (!Number.isFinite(count)) {
+    logger.error(`Invalid response: expected numeric "cnt", got ${JSON.stringify(response)}`, 'getCompletionCount');
+    throw new Error('Invalid response');
   }
 
-  return courses;
+  return count;
 }
 
-/**
- * Fetches the courses from the server and adds them to the database.
- * @function addCourses
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Failed to add courses to database.
- */
-async function addCourses() {
-  return await fetchCourses('add');
-}
+async function getAllCompletions({signal}, csCourseActiveSeq, csCourseMasterSeq, count) {
+  const csrf = getCSRFToken();
 
-/**
- * Fetches the courses from the server and updates them in the database.
- * @function updateCourses
- * @returns {Promise<Course[]>} - The courses.
- * @throws {Error} - Failed to update courses in database.
- */
-async function updateCourses() {
-  return await fetchCourses('update');
-}
+  const listPayload = new CompletionRequest(csCourseActiveSeq, count);
+  const listResponse = await ajaxJSON({
+    url: '/course/cmpl/selectCmplList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(listPayload, true)
+  }, {
+    signal,
+    timeout: 500,
+    retries: 6,
+    retryInitialDelayMs: 1000,
+    retryFactor: 2,
+    retryCapMs: 16000,
+    totalBudgetMs: 60000
+  });
 
-/**
- * Checks if a course is a custom course with a specific keyword.
- * @param {Course} course
- * @param {string} keyword
- * @returns {boolean}
- */
-function isCustomCourse(course, keyword) {
-  return course.csTitle.includes(keyword) && course.csTitlePath === '맞춤형';
-}
+  const completions = listResponse?.list.map(completion => new Completion(
+    completion.csMemberSeq,
+    completion.csMemberId,
+    completion.csMemberName,
+    completion.cxMemberEmail,
+    completion.csApplyStatusCd,
+    '', // Initially empty
+    completion.csCompletionYn,
+    completion.cxCompletionDate
+  ));
 
-async function searchCustomCourses(input = '',
-  year = new Date().getFullYear()) {
-  // Get all courses from the database
-  const exist = await getData('courses');
-  if (!exist) {
-    await addCourses();
-  }
-  const courses = await getData('courses');
-  customTable(courses);
-  console.log(`Found ${courses.length} courses in the database.`);
+  const appPayload = new ApplicationRequest(csCourseActiveSeq, csCourseMasterSeq, count);
+  const appResponse = await ajaxJSON({
+    url: '/course/apply/selectApplyList.do',
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': csrf
+    },
+    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+    data: jQuery.param(appPayload, true)
+  }, {
+    signal,
+    timeout: 500,
+    retries: 6,
+    retryInitialDelayMs: 1000,
+    retryFactor: 2,
+    retryCapMs: 16000,
+    totalBudgetMs: 60000
+  });
 
-  // Split the search keywords
-  const keywords = input.split(' ');
-
-  // Search for courses that match the search criteria
-  const results = [];
-  for (const course of courses) {
-    for (const keyword of keywords) {
-      // Search for course's attributes that match the keyword
-      if (isCustomCourse(course, keyword) && course.csYear === year) {
-        results.push(course);
-        break;
-      }
+  const startDateMap = new Map();
+  appResponse.list.forEach(apply => {
+    startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
+  });
+  completions.forEach(completion => {
+      completion.csStudyStartDate = startDateMap.get(completion.csMemberSeq) || null;
     }
-  }
+  );
 
-  // Table the search results
-  customTable(results);
-  console.log(
-    `Found ${results.length} courses that match the search criteria.`);
-
-  // Return the search results
-  return results;
+  return completions;
 }
 
-export async function searchCourses(input = '',
-  year = new Date().getFullYear()) {
+async function loadCourses(input = '', year = new Date().getFullYear()) {
   // Get all courses from the database
   const exist = await getData('courses');
   if (!exist) {
-    await addCourses();
+    logger.error('No course data found in the database. Please fetch and store course data first.', 'loadCourses');
+    throw new Error('No course data found in the database.');
   }
   const courses = await getData('courses');
-  // customTable(courses);
-  // console.log(`Found ${courses.length} courses in the database.`);
 
   // Split the search keywords
   const keywords = input.split(' ');
@@ -714,12 +496,21 @@ export async function searchCourses(input = '',
     }
   }
 
-  // Table the search results
-  // customTable(results);
-  // console.log(`Found ${results.length} courses that match the search criteria.`);
-
   // Return the search results
   return results;
 }
 
-export { updateCourses };
+export {
+  Course,
+  CourseRequest,
+  Completion,
+  CompletionRequest,
+  ApplicationRequest,
+  getTotalCourseCount,
+  getAllCourses,
+  getCourseChapterCount,
+  getCourseExamCount,
+  getCompletionCount,
+  getAllCompletions,
+  loadCourses
+}

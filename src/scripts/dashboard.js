@@ -1,18 +1,22 @@
+import Logger from './logger.js';
+
+const logger = new Logger('dashboard');
+
 /**
- * Refresh the page every specified interval
- * @param {number} intervalInMinutes - The interval in minutes to refresh the page.
+ * 지정한 간격마다 페이지를 새로고침한다
+ * @param {number} intervalInMinutes - 새로고침 간격(분)
  * @returns {void}
  */
 function refreshPage(intervalInMinutes) {
-  console.log("Refresh page every", intervalInMinutes, "minute(s)...");
+  logger.debug(`Refresh every ${intervalInMinutes} minute(s)`);
 
-  // Refresh the page every specified interval
+  // 지정한 간격마다 페이지 새로고침
   setInterval(function () {
     location.reload();
-  }, intervalInMinutes * 60 * 1000); // Convert minutes to milliseconds
+  }, intervalInMinutes * 60 * 1000); // 분을 밀리초로 변환
 
-  // Log the initial page load timestamp
-  console.log("Page loaded at:", new Date().toLocaleString());
+  // 초기 페이지 로드 시각 로그
+  logger.debug(`Page loaded at: ${new Date().toLocaleString()}`);
 }
 
 if (window.location.href.includes("cmmn/main.do")) {

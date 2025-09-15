@@ -1,6 +1,8 @@
-import * as jQuery from 'jquery';
-import { getCSRFToken } from './shared.js';
-import { addData, getData, isExist, updateData } from "./storage";
+import Logger from './logger.js';
+import {getData, isExist} from './storage.js';
+import {ajaxJSON, getCSRFToken} from './utility.js';
+
+const logger = new Logger('member');
 
 /**
  * Represents a member.
@@ -18,9 +20,7 @@ import { addData, getData, isExist, updateData } from "./storage";
  * @returns {Member} - The member object.
  */
 class Member {
-  constructor(csMemberSeq, csMemberId, csMemberName, cxMemberBirthday,
-    cxMemberEmail, cxCompanyName, cxDepartmentName, cxDivisionCdName,
-    csCertiType) {
+  constructor(csMemberSeq, csMemberId, csMemberName, cxMemberBirthday, cxMemberEmail, cxCompanyName, cxDepartmentName, cxDivisionCdName, csCertiType) {
     this.csMemberSeq = csMemberSeq;
     this.csMemberId = csMemberId;
     this.csMemberName = csMemberName;
@@ -79,139 +79,41 @@ class MemberRequest {
   }
 }
 
-/**
- * Fetches the total number of active members from the server.
- * @function getActiveMemberCount
- * @returns {Promise} - The promise object representing the total number of active members.
- * @throws {Error} - The error thrown when failed to fetch total active members from server.
- */
-function getActiveMemberCount() {
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/user/member/selectMemberList.do",
-      type: "post",
-      data: new MemberRequest(),
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        resolve(data.cnt);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
-        } else {
-          console.error("failed to fetch total active members from server!");
-          reject(xhr, status, error);
-        }
-      }
-    });
+async function getActiveMemberCount({signal}) {
+  const csrf = getCSRFToken();
+  const payload = new MemberRequest();
+
+  const response = await ajaxJSON({
+    url: '/user/member/selectMemberList.do', method: 'POST', headers: {
+      'X-CSRF-TOKEN': csrf
+    }, contentType: 'application/x-www-form-urlencoded; charset=UTF-8', data: jQuery.param(payload, true)
+  }, {
+    signal, timeout: 500, retries: 6, retryInitialDelayMs: 1000, retryFactor: 2, retryCapMs: 16000, totalBudgetMs: 60000
   });
-}
 
-/**
- * Fetches the active members from the server.
- * @function getActiveMembers
- * @param {number} count - The number of active members to fetch.
- * @returns {Promise} - The promise object representing the active members.
- */
-function getActiveMembers(count = 10) {
-  return new Promise((resolve, reject) => {
-    jQuery.ajax({
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      },
-      xhrFields: {
-        withCredentials: true // Include cookies in the request
-      },
-      url: "/user/member/selectMemberList.do",
-      type: "post",
-      data: new MemberRequest(count),
-      dataType: "json",
-      tryCount: 0,
-      retryLimit: 3,
-      success: function (data) {
-        const members = [];
-        for (const item of data.list) {
-          members.push(
-            new Member(item.csMemberSeq, item.csMemberId, item.csMemberName,
-              item.cxMemberBirthday, item.cxMemberEmail, item.cxCompanyName,
-              item.cxDepartmentName, item.cxDivisionCdName,
-              item.csCertiType));
-        }
-        resolve(members);
-      },
-      error: function (xhr, status, error) {
-        console.log(xhr);
-        this.tryCount++;
-        if (this.tryCount <= this.retryLimit) {
-          jQuery.ajax(this);
+  const count = Number(response?.cnt);
 
-        } else {
-          console.error("failed to fetch active members from server!");
-          reject(xhr, status, error);
-        }
-      }
-    });
-  });
-}
-
-/**
- * Fetch the active members in the database.
- * @function fetchMembers
- * @param {string} action - The action to perform ('add' or 'update').
- * @returns {Promise} - The promise object representing the processed active members.
- */
-async function fetchMembers(action) {
-  console.debug('Fetching count of active members...');
-  const activeMemberCount = await getActiveMemberCount();
-  console.debug(`Found ${activeMemberCount} active members.`);
-
-  console.debug('Fetching active members...');
-  const members = await getActiveMembers(activeMemberCount);
-  console.debug(`Found ${members.length} active members.`);
-
-  if (action === 'add') {
-    console.debug('Adding active members to the database...');
-    await addData('members', members);
-    console.debug(
-      `Successfully added ${members.length} members to the database.`);
-  } else if (action === 'update') {
-    console.log('Updating active members in the database...');
-    await updateData('members', members);
-    console.log(
-      `Successfully updated ${members.length} members in the database.`);
-  } else {
-    throw new Error(`Unknown action: ${action}`);
+  if (!Number.isFinite(count)) {
+    logger.error(`Invalid response: expected numeric "cnt", got ${JSON.stringify(response)}`, 'getActiveMemberCount');
+    throw new Error('Invalid response');
   }
 
+  return count;
+}
+
+async function getActiveMembers({signal}, count = 10) {
+  const csrf = getCSRFToken();
+  const payload = new MemberRequest(count);
+
+  const response = await ajaxJSON({
+    url: '/user/member/selectMemberList.do', method: 'POST', headers: {
+      'X-CSRF-TOKEN': csrf
+    }, contentType: 'application/x-www-form-urlencoded; charset=UTF-8', data: jQuery.param(payload, true)
+  }, {signal, timeout: 20000, retries: 3});
+
+  const members = response?.list.map(member => new Member(member.csMemberSeq, member.csMemberId, member.csMemberName, member.cxMemberBirthday, member.cxMemberEmail, member.cxCompanyName, member.cxDepartmentName, member.cxDivisionCdName, member.csCertiType));
+
   return members;
-}
-
-/**
- * Adds the active members to the database.
- * @function addMembers
- * @returns {Promise} - The promise object representing the added active members.
- */
-async function addMembers() {
-  return await fetchMembers('add');
-}
-
-/**
- * Updates the active members in the database.
- * @function updateMembers
- * @returns {Promise} - The promise object representing the updated active members.
- */
-async function updateMembers() {
-  return await fetchMembers('update');
 }
 
 /**
@@ -222,15 +124,15 @@ async function updateMembers() {
  * @returns {boolean} - The result indicating if the member belongs to the company.
  */
 function isBelongedToCompany(member, keyword) {
-  return (member.cxCompanyName && member.cxCompanyName.includes(keyword))
-    || (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
+  return (member.cxCompanyName && member.cxCompanyName.includes(keyword)) || (member.cxDepartmentName && member.cxDepartmentName.includes(keyword));
 }
 
-export async function searchMembers(input = '') {
+async function loadMembers(input = '') {
   // Get all members from the database if exists
   const exist = await isExist('members');
   if (!exist) {
-    await addMembers();
+    logger.error('No member data found in the database. Please fetch and store member data first.', 'loadMembers');
+    throw new Error('No member data found in the database.');
   }
   const members = await getData('members');
 
@@ -253,4 +155,6 @@ export async function searchMembers(input = '') {
   return results;
 }
 
-export { updateMembers };
+export {
+  Member, MemberRequest, getActiveMemberCount, getActiveMembers, loadMembers
+}
