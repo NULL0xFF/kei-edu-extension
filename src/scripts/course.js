@@ -491,6 +491,7 @@ async function loadCourses(input = '', year = new Date().getFullYear()) {
       // Search for course's attributes that match the keyword
       if (course.csTitle.includes(keyword) && course.csYear >= year) {
         results.push(course);
+        logger.info(`Matched course: [${course.csCourseActiveSeq}] ${course.csTitle}`, 'loadCourses');
         break;
       }
     }

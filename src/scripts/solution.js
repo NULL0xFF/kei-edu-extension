@@ -154,6 +154,9 @@ async function getStatistic(event, input, start, end) {
 
   const courses = await Course.loadCourses('', start.getFullYear());
   const members = await Member.loadMembers();
+  
+  console.log(courses);
+  console.log(members);
 
   const results = [];
   members.forEach(member => {
