@@ -143,7 +143,7 @@ async function getStatistic(event, input, start, end) {
 
   start = new Date(start);
   end = new Date(end);
-  end.setDate(end.getDate + 1);
+  end = new Date(end.getDate() + 1);
 
   start = new Date(Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()));
   end = new Date(Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()));
