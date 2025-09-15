@@ -1,5 +1,8 @@
 import $ from 'jquery';
 import * as XLSX from 'xlsx';
+import Logger from './logger.js';
+
+const logger = new Logger('utility');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -252,8 +255,16 @@ function saveAsXLSXWithDate(filename, results) {
     const parts = dateString.trim().split('.'); // Trim and split 'yyyy.MM.dd'
 
     if (parts.length !== 3) {
-      console.info(
-        `Invalid date format: Expected 'yyyy.MM.dd'\n Received: ${dateString}`);
+      logger.warn(`Invalid date format: Expected 'yyyy.MM.dd'\n Received: ${dateString}`);
+
+      // Conversion by Case
+      if (parts.length === 2 && parts[0].length === 4 && parts[1].length === 4) {
+        let converted = `${parts[0]}-${parts[1].slice(0, 2)}-${parts[1].slice(2)}`;
+        logger.warn(`Attempting conversion to 'yyyy-MM-dd': ${converted}`);
+        return converted;
+      }
+
+      // Default to empty string if non-convertible
       return '';
     }
 
