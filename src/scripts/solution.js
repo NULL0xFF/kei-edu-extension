@@ -63,16 +63,23 @@ class Record {
 
 async function updateCourses({ signal }, year) {
   try {
-    logger.info('Starting course update', 'updateCourses');
+    logger.info(`Starting course update for year: ${year}`, 'updateCourses');
 
-    const totalCourses = await Course.getTotalCourseCount({ signal }, year);
-    logger.debug(`Total course count fetched: ${totalCourses}`, 'updateCourses');
+    // Fetch all courses from the server
+    const totalCourses = await Course.getTotalCourseCount({ signal });
+    logger.debug(`Total course count fetched (unfiltered): ${totalCourses}`, 'updateCourses');
+    const allCourses = await Course.getAllCourses({ signal }, totalCourses);
+    logger.debug(`Fetched ${allCourses.length} courses (unfiltered)`, 'updateCourses');
 
-    const courses = await Course.getAllCourses({ signal }, totalCourses, year);
-    logger.debug(`Fetched ${courses.length} courses`, 'updateCourses');
+    // Filter courses by the given year
+    const courses = allCourses.filter(course => course.csYear == year);
+    const totalFilteredCourses = courses.length;
+    logger.info(`Processing ${totalFilteredCourses} courses for the year ${year}.`, 'updateCourses');
 
-    for (const course of courses) {
+    for (const [index, course] of courses.entries()) {
       let isTimedout = false;
+      const progress = `[${index + 1}/${totalFilteredCourses}]`;
+
       do {
         try {
           const totalChapters = await Course.getCourseChapterCount({ signal }, course.csCourseActiveSeq);
@@ -83,22 +90,22 @@ async function updateCourses({ signal }, year) {
           const completions = await Course.getAllCompletions({ signal }, course.csCourseActiveSeq, course.csCourseMasterSeq, totalCompletions);
           course.csCmplList = completions;
           if (completions.length !== totalCompletions) {
-            logger.warn(`[${course.csCourseActiveSeq}] Mismatch in completions: expected ${totalCompletions}, got ${completions.length}`, 'updateCourses');
+            logger.warn(`${progress} [${course.csCourseActiveSeq}] Mismatch in completions: expected ${totalCompletions}, got ${completions.length}`, 'updateCourses');
           }
 
-          logger.debug(`[${course.csCourseActiveSeq}] Processed "${course.csTitle}"`);
+          logger.debug(`${progress} [${course.csCourseActiveSeq}] Processed "${course.csTitle}"`, 'updateCourses');
 
           await Utility.sleep(100);
         } catch (error) {
           // if error is 'timeout', retry
           if (error === 'timeout') {
             isTimedout = true;
-            logger.warn(`[${course.csCourseActiveSeq}] Timeout occurred, retrying...`, 'updateCourses');
+            logger.warn(`${progress} [${course.csCourseActiveSeq}] Timeout occurred, retrying...`, 'updateCourses');
           }
         }
       } while (isTimedout);
     }
-    logger.debug(`All courses processed`, 'updateCourses');
+    logger.debug(`All filtered courses processed`, 'updateCourses');
 
     await addData('courses', courses);
     logger.info('Course update completed', 'updateCourses');

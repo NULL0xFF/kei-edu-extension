@@ -247,9 +247,9 @@ class CourseRequest {
   }
 }
 
-async function getTotalCourseCount({ signal }, year = '') {
+async function getTotalCourseCount({ signal }) {
   const csrf = getCSRFToken();
-  const payload = new CourseRequest(10, '', year);
+  const payload = new CourseRequest();
 
   const response = await ajaxJSON({
     url: '/course/active/selectActiveOperList.do',
@@ -276,12 +276,11 @@ async function getTotalCourseCount({ signal }, year = '') {
  *
  * @param signal
  * @param count - The number of courses to fetch.
- * @param year
  * @returns {Promise<Course[]>} - A promise that resolves to an array of Course objects.
  */
-async function getAllCourses({ signal }, count, year = '') {
+async function getAllCourses({ signal }, count) {
   const csrf = getCSRFToken();
-  const payload = new CourseRequest(count, '', year);
+  const payload = new CourseRequest(count);
 
   const response = await ajaxJSON({
     url: '/course/active/selectActiveOperList.do',
