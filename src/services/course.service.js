@@ -86,10 +86,11 @@ export class Course {
  */
 export class CourseService {
   /**
-   * 모든 과정 데이터 가져오기 (상세 정보 포함)
+   * 모든 과정 데이터 가져오기 (상세 정보 포함) - 로직 수정
+   * @param {number | null} filterYear - 상세 정보를 가져올 연도. null이면 모든 과정의 상세 정보를 가져옴.
    * @returns {Promise<Course[]>}
    */
-  static async fetchAllCourses() {
+  static async fetchAllCourses(filterYear = null) {
     try {
       logger.info('Fetching all courses...');
 
@@ -103,62 +104,70 @@ export class CourseService {
       const coursesData = await CourseApi.getAllCourses(totalCount);
       logger.info(`Fetched ${coursesData.length} courses`);
 
-      const progress = new ProgressTracker(coursesData.length, '과정 상세 정보 수집');
+      // 상세 정보를 조회할 과정만 필터링
+      const coursesToUpdateDetails = filterYear
+        ? coursesData.filter(course => course.csYear == filterYear)
+        : coursesData;
+
+      logger.info(`Fetching details for ${coursesToUpdateDetails.length} courses of year ${filterYear || 'All'}`);
+
+      const progress = new ProgressTracker(coursesData.length, '과정 정보 처리');
 
       const courses = [];
       for (let i = 0; i < coursesData.length; i++) {
         const courseData = coursesData[i];
 
-        try {
-          // 차시 및 시험 수 조회로 이수 시간 계산
-          const [classCount, examCount] = await Promise.all([
-            CourseApi.getElementCount(courseData.csCourseActiveSeq, COURSE.ELEMENT_TYPE.ORGANIZATION),
-            CourseApi.getElementCount(courseData.csCourseActiveSeq, COURSE.ELEMENT_TYPE.EXAM),
-          ]);
-          courseData.csCmplTime = classCount + examCount;
+        // 상세 정보를 업데이트해야 하는 과정인지 확인
+        const shouldFetchDetails = coursesToUpdateDetails.some(c => c.csCourseActiveSeq === courseData.csCourseActiveSeq);
 
-          // 수료 정보 조회
-          const completionCount = await CourseApi.getCompletionCount(
-            courseData.csCourseActiveSeq
-          );
+        if (shouldFetchDetails) {
+          try {
+            // 차시 및 시험 수 조회로 이수 시간 계산
+            const [classCount, examCount] = await Promise.all([
+              CourseApi.getElementCount(courseData.csCourseActiveSeq, COURSE.ELEMENT_TYPE.ORGANIZATION),
+              CourseApi.getElementCount(courseData.csCourseActiveSeq, COURSE.ELEMENT_TYPE.EXAM),
+            ]);
+            courseData.csCmplTime = classCount + examCount;
 
-          if (completionCount > 0) {
-            const completions = await CourseApi.getCompletions(
-              courseData.csCourseActiveSeq,
-              completionCount
+            // 수료 정보 조회
+            const completionCount = await CourseApi.getCompletionCount(
+              courseData.csCourseActiveSeq
             );
 
-            // 수강 신청 정보 조회하여 학습 시작일 매핑
-            const applications = await CourseApi.getApplications(
-              courseData.csCourseActiveSeq,
-              courseData.csCourseMasterSeq,
-              completionCount // 수료자 수만큼 신청 정보도 있다고 가정
+            if (completionCount > 0) {
+              const completions = await CourseApi.getCompletions(
+                courseData.csCourseActiveSeq,
+                completionCount
+              );
+
+              // 수강 신청 정보 조회하여 학습 시작일 매핑
+              const applications = await CourseApi.getApplications(
+                courseData.csCourseActiveSeq,
+                courseData.csCourseMasterSeq,
+                completionCount
+              );
+
+              const startDateMap = new Map();
+              applications.forEach(app => {
+                startDateMap.set(app.csMemberSeq, app.csStudyStartDate);
+              });
+
+              completions.forEach(comp => {
+                comp.csStudyStartDate = startDateMap.get(comp.csMemberSeq) || null;
+              });
+
+              courseData.csCmplList = completions;
+            }
+          } catch (error) {
+            logger.error(
+              `Failed to fetch details for course ${courseData.csTitle}`,
+              error
             );
-
-            const startDateMap = new Map();
-            applications.forEach(app => {
-              startDateMap.set(app.csMemberSeq, app.csStudyStartDate);
-            });
-
-            completions.forEach(comp => {
-              comp.csStudyStartDate = startDateMap.get(comp.csMemberSeq) || null;
-            });
-
-            courseData.csCmplList = completions;
           }
-
-          courses.push(new Course(courseData));
-
-        } catch (error) {
-          logger.error(
-            `Failed to fetch details for course ${courseData.csTitle}`,
-            error
-          );
-          // 상세 정보 없이라도 과정은 추가
-          courses.push(new Course(courseData));
-        } finally {
-          progress.update(i + 1);
         }
+
+        courses.push(new Course(courseData));
+        progress.update(i + 1);
       }
 
       progress.complete();
@@ -229,12 +238,13 @@ export class CourseService {
 
   /**
    * 과정 데이터 업데이트
+   * @param {number | null} year - 업데이트할 연도
    * @returns {Promise<Course[]>}
    */
-  static async updateCourses() {
+  static async updateCourses(year = null) {
     try {
-      logger.info('Updating courses...');
-      const courses = await this.fetchAllCourses();
+      logger.info(`Updating courses for year: ${year || 'All'}`);
+      const courses = await this.fetchAllCourses(year);
       await this.saveCourses(courses);
       logger.info('Courses updated successfully');
       return courses;
