@@ -5,7 +5,7 @@
 
 import { CourseApi } from '../api/course.api.js';
 import { storage } from '../core/storage.js';
-import { STORAGE_KEY } from '../config/constants.js';
+import { STORAGE_KEY, COURSE } from '../config/constants.js';
 import { logger } from '../core/error-handler.js';
 import { ProgressTracker } from '../utils/progress.js';
 
@@ -92,51 +92,63 @@ export class CourseService {
   static async fetchAllCourses() {
     try {
       logger.info('Fetching all courses...');
-      
-      // 전체 과정 수 조회
+
       const totalCount = await CourseApi.getTotalCount();
       logger.info(`Total courses: ${totalCount}`);
-      
+
       if (totalCount === 0) {
         return [];
       }
-      
-      // 모든 과정 조회
+
       const coursesData = await CourseApi.getAllCourses(totalCount);
       logger.info(`Fetched ${coursesData.length} courses`);
-      
-      // 진행률 추적기 생성
+
       const progress = new ProgressTracker(coursesData.length, '과정 상세 정보 수집');
-      
-      // 각 과정의 상세 정보 수집
+
       const courses = [];
       for (let i = 0; i < coursesData.length; i++) {
         const courseData = coursesData[i];
-        
+
         try {
-          // 수업 및 시험 수 조회
+          // 차시 및 시험 수 조회로 이수 시간 계산
           const [classCount, examCount] = await Promise.all([
-            CourseApi.getClassCount(courseData.csCourseActiveSeq),
-            CourseApi.getExamCount(courseData.csCourseActiveSeq),
+            CourseApi.getElementCount(courseData.csCourseActiveSeq, COURSE.ELEMENT_TYPE.ORGANIZATION),
+            CourseApi.getElementCount(courseData.csCourseActiveSeq, COURSE.ELEMENT_TYPE.EXAM),
           ]);
-          
           courseData.csCmplTime = classCount + examCount;
-          
+
           // 수료 정보 조회
           const completionCount = await CourseApi.getCompletionCount(
             courseData.csCourseActiveSeq
           );
-          
+
           if (completionCount > 0) {
             const completions = await CourseApi.getCompletions(
               courseData.csCourseActiveSeq,
               completionCount
             );
+
+            // 수강 신청 정보 조회하여 학습 시작일 매핑
+            const applications = await CourseApi.getApplications(
+              courseData.csCourseActiveSeq,
+              courseData.csCourseMasterSeq,
+              completionCount // 수료자 수만큼 신청 정보도 있다고 가정
+            );
+
+            const startDateMap = new Map();
+            applications.forEach(app => {
+              startDateMap.set(app.csMemberSeq, app.csStudyStartDate);
+            });
+
+            completions.forEach(comp => {
+              comp.csStudyStartDate = startDateMap.get(comp.csMemberSeq) || null;
+            });
+
             courseData.csCmplList = completions;
           }
-          
+
           courses.push(new Course(courseData));
-          progress.update(i + 1);
+
         } catch (error) {
           logger.error(
             `Failed to fetch details for course ${courseData.csTitle}`,
@@ -144,9 +156,11 @@ export class CourseService {
           );
           // 상세 정보 없이라도 과정은 추가
           courses.push(new Course(courseData));
+        } finally {
+          progress.update(i + 1);
         }
       }
-      
+
       progress.complete();
       return courses;
     } catch (error) {
@@ -154,6 +168,7 @@ export class CourseService {
       throw error;
     }
   }
+
 
   /**
    * 과정 데이터를 스토리지에 저장
@@ -180,7 +195,7 @@ export class CourseService {
         csTitlePath: c.csTitlePath,
         csCmplList: c.csCmplList,
       }));
-      
+
       await storage.update('data', STORAGE_KEY.COURSES, coursesData);
       logger.info(`Saved ${courses.length} courses to storage`);
     } catch (error) {
@@ -197,12 +212,12 @@ export class CourseService {
     try {
       logger.info('Loading courses from storage...');
       const coursesData = await storage.get('data', STORAGE_KEY.COURSES);
-      
+
       if (!coursesData) {
         logger.info('No courses found in storage');
         return null;
       }
-      
+
       const courses = coursesData.map(data => new Course(data));
       logger.info(`Loaded ${courses.length} courses from storage`);
       return courses;
@@ -237,38 +252,36 @@ export class CourseService {
   static async searchCourses(filters = {}) {
     try {
       let courses = await this.loadCourses();
-      
-      // 스토리지에 데이터가 없으면 가져오기
+
       if (!courses) {
         courses = await this.updateCourses();
       }
-      
-      // 필터 적용
+
       let results = courses;
-      
+
       if (filters.keyword) {
         const keyword = filters.keyword.toLowerCase();
         results = results.filter(course =>
           course.csTitle.toLowerCase().includes(keyword)
         );
       }
-      
+
       if (filters.year) {
         results = results.filter(course => course.csYear >= filters.year);
       }
-      
+
       if (filters.status) {
         results = results.filter(course => course.csStatusCd === filters.status);
       }
-      
+
       if (filters.type) {
         results = results.filter(course => course.csCourseTypeCd === filters.type);
       }
-      
+
       if (filters.customizedOnly) {
         results = results.filter(course => course.isCustomized());
       }
-      
+
       logger.info(`Found ${results.length} courses matching filters`);
       return results;
     } catch (error) {

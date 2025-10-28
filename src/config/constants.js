@@ -11,6 +11,7 @@ export const MENU_ID = {
   MEMBER: 'MG0086',
   COMPLETION: 'MG0036',
   APPLICATION: 'MG0028',
+  COURSE_ELEMENT: 'MG0005', // 과정 구성요소 메뉴 ID 추가
 };
 
 /**
@@ -60,6 +61,11 @@ export const COURSE = {
     DATE_ASC: 4,
     DATE_DESC: -4,
   },
+  // 과정 구성요소 타입 추가
+  ELEMENT_TYPE: {
+    ORGANIZATION: 'organization', // 차시
+    EXAM: 'exam', // 시험
+  }
 };
 
 /**
@@ -112,9 +118,8 @@ export const COMPLETION = {
  */
 export const API_ENDPOINT = {
   COURSE: {
-    LIST: '/course/user/selectCourseList.do',
-    CLASS_COUNT: '/course/courseware/selectCourseItemCnt.do',
-    EXAM_COUNT: '/course/exam/countExamSeqByActiveSeq.do',
+    LIST: '/course/active/selectActiveOperList.do',
+    ELEMENT_LIST: '/course/active/selectAtiveElementList.do',
   },
   MEMBER: {
     LIST: '/user/member/selectMemberList.do',
@@ -123,7 +128,7 @@ export const API_ENDPOINT = {
     LIST: '/course/cmpl/selectCmplList.do',
   },
   APPLICATION: {
-    LIST: '/course/user/selectCourseApplyList.do',
+    LIST: '/course/apply/selectApplyList.do',
   },
 };
 

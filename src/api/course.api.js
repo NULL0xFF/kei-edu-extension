@@ -111,6 +111,36 @@ export class CompletionRequestBuilder {
 }
 
 /**
+ * 수강 신청 정보 요청 빌더
+ */
+export class ApplicationRequestBuilder {
+  constructor(courseActiveSeq, courseMasterSeq) {
+    this.request = {
+      pageIndex: 1,
+      searchListCnt: 10,
+      dspLinkMenuId: MENU_ID.APPLICATION,
+      dspMenuId: MENU_ID.APPLICATION,
+      searchCsCourseActiveSeq: courseActiveSeq,
+      searchCsCourseMasterSeq: courseMasterSeq,
+      searchCsApplyStatusCd: '',
+      searchCxDivisionCd: '',
+      searchCsMemberId: '',
+      searchCsMemberName: '',
+    };
+  }
+
+  pageSize(count) {
+    this.request.searchListCnt = count;
+    return this;
+  }
+
+  build() {
+    return { ...this.request };
+  }
+}
+
+
+/**
  * 과정 API 클래스
  */
 export class CourseApi {
@@ -122,7 +152,7 @@ export class CourseApi {
   static async getCourseList(params) {
     logger.debug('Fetching course list', params);
     const response = await apiClient.post(API_ENDPOINT.COURSE.LIST, params);
-    return response;
+    return { cnt: response.cnt, aaData: response.list };
   }
 
   /**
@@ -133,7 +163,7 @@ export class CourseApi {
     const request = new CourseRequestBuilder()
       .pageSize(1)
       .build();
-    
+
     const response = await this.getCourseList(request);
     return response.cnt || 0;
   }
@@ -147,43 +177,30 @@ export class CourseApi {
     const request = new CourseRequestBuilder()
       .pageSize(count)
       .build();
-    
+
     const response = await this.getCourseList(request);
     return response.aaData || [];
   }
 
   /**
-   * 과정의 수업 수 조회
+   * 과정 구성요소(차시, 시험) 수 조회 (수정)
    * @param {number} courseActiveSeq - 과정 활성 시퀀스
+   * @param {string} elementType - 구성요소 타입 (organization, exam)
    * @returns {Promise<number>}
    */
-  static async getClassCount(courseActiveSeq) {
+  static async getElementCount(courseActiveSeq, elementType) {
     const params = {
       csCourseActiveSeq: courseActiveSeq,
+      csReferenceTypeCd: elementType,
+      dspMenuId: MENU_ID.COURSE_ELEMENT,
+      dspLinkMenuId: MENU_ID.COURSE_ELEMENT,
     };
-    
-    const response = await apiClient.post(
-      API_ENDPOINT.COURSE.CLASS_COUNT,
-      params
-    );
-    return response.cnt || 0;
-  }
 
-  /**
-   * 과정의 시험 수 조회
-   * @param {number} courseActiveSeq - 과정 활성 시퀀스
-   * @returns {Promise<number>}
-   */
-  static async getExamCount(courseActiveSeq) {
-    const params = {
-      csCourseActiveSeq: courseActiveSeq,
-    };
-    
     const response = await apiClient.post(
-      API_ENDPOINT.COURSE.EXAM_COUNT,
+      API_ENDPOINT.COURSE.ELEMENT_LIST,
       params
     );
-    return response.cnt || 0;
+    return response.list?.length || 0;
   }
 
   /**
@@ -195,7 +212,7 @@ export class CourseApi {
     const request = new CompletionRequestBuilder(courseActiveSeq)
       .pageSize(1)
       .build();
-    
+
     const response = await apiClient.post(
       API_ENDPOINT.COMPLETION.LIST,
       request
@@ -213,11 +230,30 @@ export class CourseApi {
     const request = new CompletionRequestBuilder(courseActiveSeq)
       .pageSize(count)
       .build();
-    
+
     const response = await apiClient.post(
       API_ENDPOINT.COMPLETION.LIST,
       request
     );
-    return response.aaData || [];
+    return response.list || [];
+  }
+
+  /**
+   * 수강 신청 목록 조회 (추가)
+   * @param {number} courseActiveSeq
+   * @param {number} courseMasterSeq
+   * @param {number} count
+   * @returns {Promise<Array>}
+   */
+  static async getApplications(courseActiveSeq, courseMasterSeq, count) {
+    const request = new ApplicationRequestBuilder(courseActiveSeq, courseMasterSeq)
+      .pageSize(count)
+      .build();
+
+    const response = await apiClient.post(
+      API_ENDPOINT.APPLICATION.LIST,
+      request
+    );
+    return response.list || [];
   }
 }
