@@ -10,7 +10,7 @@
  */
 async function initDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('MyDB', 1);
+    const request = indexedDB.open('kei-edu-extension', 1);
     request.onerror = reject;
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event) => {
