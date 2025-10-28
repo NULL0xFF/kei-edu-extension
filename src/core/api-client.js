@@ -17,6 +17,15 @@ function getCSRFToken() {
 }
 
 /**
+ * 딜레이 유틸리티
+ * @param {number} ms - 딜레이 시간 (밀리초)
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * API 클라이언트 클래스
  */
 export class ApiClient {
@@ -25,107 +34,97 @@ export class ApiClient {
   }
 
   /**
-   * HTTP POST 요청
+   * HTTP POST 요청 (재시도 및 타임아웃 로직 포함)
    * @param {string} url - 요청 URL
    * @param {Object} data - 요청 데이터
    * @param {Object} options - 추가 옵션
    * @returns {Promise<Object>} 응답 데이터
    */
-  async post(url, data = {}, options = {}) {
+  post(url, data = {}, options = {}) {
     const {
-      retryLimit = NETWORK.RETRY_LIMIT,
-      timeout = NETWORK.TIMEOUT,
-      retryDelay = NETWORK.RETRY_DELAY,
+      timeout = NETWORK.TIMEOUT || 5000,
+      retries = NETWORK.RETRY_LIMIT || 5,
+      retryInitialDelayMs = NETWORK.RETRY_DELAY || 1000,
+      retryFactor = 2,
+      retryCapMs = 16000,
+      totalBudgetMs = 60000,
+      signal,
     } = options;
 
-    return this._requestWithRetry(
-      url,
-      data,
-      { retryLimit, timeout, retryDelay }
-    );
-  }
-
-  /**
-   * 재시도 로직이 포함된 요청
-   * @private
-   */
-  async _requestWithRetry(url, data, options) {
-    let lastError;
-
-    for (let attempt = 0; attempt <= options.retryLimit; attempt++) {
-      try {
-        if (attempt > 0) {
-          logger.info(`Retry attempt ${attempt}/${options.retryLimit} for ${url}`);
-          await this._delay(options.retryDelay * attempt);
-        }
-
-        const response = await this._executeRequest(url, data, options.timeout);
-        return response;
-      } catch (error) {
-        lastError = error;
-        logger.warn(`Request failed (attempt ${attempt + 1}): ${error.message}`);
-      }
-    }
-
-    throw ErrorHandler.networkError(
-      `Request failed after ${options.retryLimit + 1} attempts`,
-      { url, lastError }
-    );
-  }
-
-  /**
-   * 실제 요청 실행
-   * @private
-   */
-  _executeRequest(url, data, timeout) {
     return new Promise((resolve, reject) => {
-      jQuery.ajax({
-        headers: {
-          'X-CSRF-TOKEN': this.csrfToken,
-        },
-        xhrFields: {
-          withCredentials: true,
-        },
-        url,
-        type: 'post',
-        data,
-        dataType: 'json',
-        timeout,
-        success: (response) => {
-          logger.debug(`Request succeeded: ${url}`, response);
-          resolve(response);
-        },
-        error: (xhr, status, error) => {
-          const errorMessage = this._parseErrorResponse(xhr, status, error);
-          reject(new Error(errorMessage));
-        },
-      });
+      let attempt = 0;
+      const t0 = Date.now();
+      let currentXHR;
+
+      const abortHandler = () => {
+        currentXHR?.abort();
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          return reject(new DOMException('Aborted', 'AbortError'));
+        }
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
+      const attemptRequest = async () => {
+        if (signal?.aborted) return;
+
+        currentXHR = jQuery.ajax({
+          url,
+          type: 'post',
+          data,
+          dataType: 'json',
+          timeout,
+          headers: { 'X-CSRF-TOKEN': this.csrfToken },
+          xhrFields: { withCredentials: true },
+        })
+          .done(response => {
+            signal?.removeEventListener('abort', abortHandler);
+            logger.debug(`Request succeeded: ${url}`, response);
+            resolve(response);
+          })
+          .fail(async (xhr, textStatus, errorThrown) => {
+            const status = xhr?.status;
+            const isRetriable = textStatus === 'timeout' || textStatus === 'error' || [0, 429, 500, 502, 503, 504].includes(status);
+
+            if (!isRetriable || attempt >= retries || signal?.aborted) {
+              signal?.removeEventListener('abort', abortHandler);
+              const error = ErrorHandler.networkError(errorThrown || textStatus || 'AJAX failed', { url, status, textStatus });
+              logger.error(`Request failed permanently for ${url}`, error);
+              return reject(error);
+            }
+
+            attempt++;
+            logger.warn(`Request failed for ${url} (attempt ${attempt}/${retries}). Retrying...`, { status, textStatus });
+
+            const retryAfterHeader = Number(xhr?.getResponseHeader?.('Retry-After'));
+            const exponentialDelay = Math.min(retryCapMs, retryInitialDelayMs * (retryFactor ** (attempt - 1)));
+            let delay = Number.isFinite(retryAfterHeader) ? Math.max(exponentialDelay, retryAfterHeader * 1000) : exponentialDelay;
+
+            const elapsed = Date.now() - t0;
+            if (elapsed + delay > totalBudgetMs) {
+              delay = Math.max(0, totalBudgetMs - elapsed);
+            }
+
+            if (delay > 0) {
+              await sleep(delay);
+            }
+
+            if (Date.now() - t0 >= totalBudgetMs) {
+              signal?.removeEventListener('abort', abortHandler);
+              const budgetError = ErrorHandler.networkError('Retry budget exceeded', { url });
+              logger.error(`Retry budget exceeded for ${url}`, budgetError);
+              return reject(budgetError);
+            }
+
+            attemptRequest();
+          });
+      };
+
+      attemptRequest();
     });
-  }
-
-  /**
-   * 에러 응답 파싱
-   * @private
-   */
-  _parseErrorResponse(xhr, status, error) {
-    if (xhr.responseJSON && xhr.responseJSON.message) {
-      return xhr.responseJSON.message;
-    }
-    if (status === 'timeout') {
-      return 'Request timeout';
-    }
-    if (status === 'abort') {
-      return 'Request aborted';
-    }
-    return error || 'Unknown network error';
-  }
-
-  /**
-   * 딜레이 유틸리티
-   * @private
-   */
-  _delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
