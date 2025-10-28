@@ -519,10 +519,11 @@ function getTotalCourseCount() {
  * Fetches the courses from the server.
  * @function getCourses
  * @param {number} count - The number of courses to return.
+ * @param {number} year - The year to filter courses.
  * @returns {Promise<Course[]>} - The courses.
  * @throws {Error} - Failed to fetch courses from server.
  */
-function getCourses(count = 10) {
+function getCourses(count = 10, year = '') {
   return new Promise((resolve, reject) => {
     jQuery.ajax({
       headers: {
@@ -533,7 +534,7 @@ function getCourses(count = 10) {
       },
       url: "/course/active/selectActiveOperList.do",
       type: "post",
-      data: new CourseRequest(count),
+      data: new CourseRequest(count, '', year),  // year 매개변수 추가
       dataType: "json",
       tryCount: 0,
       retryLimit: 3,
@@ -563,16 +564,17 @@ function getCourses(count = 10) {
  * Fetch the courses from the server and add them to the database.
  * @function fetchCourses
  * @param {string} action - The action to perform on the courses.
+ * @param {number} year - The year to filter courses.
  * @returns {Promise<Course[]>} - The courses.
  * @throws {Error} - Unknown action.
  */
-async function fetchCourses(action) {
-  console.log('Fetching count of courses...')
+async function fetchCourses(action, year = new Date().getFullYear()) {
+  console.log(`Fetching count of courses for year ${year}...`)
   const totalCourseCount = await getTotalCourseCount();
   console.log(`Found ${totalCourseCount} courses.`)
 
   console.log('Fetching courses...')
-  const courses = await getCourses(totalCourseCount);
+  const courses = await getCourses(totalCourseCount, year);  // year 매개변수 전달
   console.log(`Fetched ${courses.length} courses.`)
 
   var started = Date.now();
@@ -636,11 +638,12 @@ async function addCourses() {
 /**
  * Fetches the courses from the server and updates them in the database.
  * @function updateCourses
+ * @param {number} year - The year to filter courses.
  * @returns {Promise<Course[]>} - The courses.
  * @throws {Error} - Failed to update courses in database.
  */
-async function updateCourses() {
-  return await fetchCourses('update');
+async function updateCourses(year = new Date().getFullYear()) {
+  return await fetchCourses('update', year);
 }
 
 /**

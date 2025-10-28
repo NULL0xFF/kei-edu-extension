@@ -58,9 +58,9 @@ class Record {
   }
 }
 
-async function updateAll() {
+async function updateAll(year = new Date().getFullYear()) {
   await updateMembers();
-  await updateCourses();
+  await updateCourses(year);
 }
 
 async function search(input = '', start = new Date(
@@ -515,11 +515,16 @@ if (window.location.href.includes("user/member/memberList.do")) {
     updateButton.innerHTML = "<span class=\"txt_white\">업데이트</span>";
     updateButton.className = "btn nor btn-gray";
     updateButton.onclick = async function () {
+      const year = prompt("Enter year (yyyy)", new Date().getFullYear().toString());
+      if (!year) {
+        alert("Invalid year");
+        return;
+      }
       updateButton.disabled = true;
       updateButton.innerHTML = "<span class=\"txt_white\">회원 진행중...</span>";
       await updateMembers();
       updateButton.innerHTML = "<span class=\"txt_white\">과정 진행중...</span>";
-      await updateCourses();
+      await updateCourses(Number(year));
       updateButton.innerHTML = "<span class=\"txt_white\">완료</span>";
       updateButton.disabled = false;
     };
