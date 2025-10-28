@@ -6,10 +6,11 @@ const fs = require('fs');
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
 module.exports = {
-  entry: './src/contentScript.js',
+  entry: './src/main.js',
   output: {
-    filename: 'contentScript.bundle.js',
-    path: path.resolve(__dirname, 'dist')
+    filename: 'content-script.bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+    clean: true,
   },
   plugins: [
     new CopyWebpackPlugin({
@@ -24,13 +25,32 @@ module.exports = {
             manifestJson.version = packageJson.version;
             // Return the updated manifest content
             return JSON.stringify(manifestJson, null, 2);
-          }
+          },
         },
         {
           from: 'LICENSE.md',
-          to: 'LICENSE.md'
-        }
-      ]
-    })
-  ]
+          to: 'LICENSE.md',
+        },
+        {
+          from: 'README.md',
+          to: 'README.md',
+        },
+      ],
+    }),
+  ],
+  resolve: {
+    extensions: ['.js'],
+    alias: {
+      '@config': path.resolve(__dirname, 'src/config'),
+      '@core': path.resolve(__dirname, 'src/core'),
+      '@services': path.resolve(__dirname, 'src/services'),
+      '@api': path.resolve(__dirname, 'src/api'),
+      '@ui': path.resolve(__dirname, 'src/ui'),
+      '@utils': path.resolve(__dirname, 'src/utils'),
+    },
+  },
+  optimization: {
+    minimize: true,
+  },
+  devtool: 'source-map',
 };

@@ -2,11 +2,10 @@
   "manifest_version": 3,
   "name": "KEI Edu Admin Tools",
   "version": "0.0.0",
-  "description": "A extension for managing Korea Environment Institute E-Learning Platform",
+  "description": "A modern extension for managing Korea Environment Institute E-Learning Platform",
   "permissions": [
     "storage",
-    "unlimitedStorage",
-    "scripting"
+    "unlimitedStorage"
   ],
   "content_scripts": [
     {
@@ -15,12 +14,15 @@
         "https://cyber-admin.kei.re.kr/*"
       ],
       "js": [
-        "contentScript.bundle.js"
-      ]
+        "content-script.bundle.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "host_permissions": [
     "http://cyber-admin.kei.re.kr/*",
     "https://cyber-admin.kei.re.kr/*"
-  ]
+  ],
+  "author": "Myoung Ha, Ji",
+  "homepage_url": "https://github.com/NULL0xff/kei-edu-extension"
 }

@@ -1,10 +1,11 @@
 {
   "name": "kei-edu-extension",
-  "version": "1.5.3",
+  "version": "2.0.0",
   "description": "A extension for managing Korea Environment Institute E-Learning Platform",
   "scripts": {
     "build": "webpack --mode production",
-    "watch": "webpack --watch"
+    "dev": "webpack --mode development --watch",
+    "clean": "rm -rf dist"
   },
   "author": {
     "email": "webmaster@null0xff.com",
@@ -12,6 +13,16 @@
     "url": "https://github.com/NULL0xff"
   },
   "license": "CC-BY-NC-ND-4.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NULL0xff/kei-edu-extension"
+  },
+  "keywords": [
+    "chrome-extension",
+    "education",
+    "statistics",
+    "data-management"
+  ],
   "devDependencies": {
     "copy-webpack-plugin": "^12.0.2",
     "webpack": "^5.95.0",
@@ -20,5 +31,9 @@
   "dependencies": {
     "jquery": "^3.7.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
   }
 }
