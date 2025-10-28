@@ -61,14 +61,14 @@ class Record {
   }
 }
 
-async function updateCourses({ signal }) {
+async function updateCourses({ signal }, year) {
   try {
     logger.info('Starting course update', 'updateCourses');
 
-    const totalCourses = await Course.getTotalCourseCount({ signal });
+    const totalCourses = await Course.getTotalCourseCount({ signal }, year);
     logger.debug(`Total course count fetched: ${totalCourses}`, 'updateCourses');
 
-    const courses = await Course.getAllCourses({ signal }, totalCourses);
+    const courses = await Course.getAllCourses({ signal }, totalCourses, year);
     logger.debug(`Fetched ${courses.length} courses`, 'updateCourses');
 
     for (const course of courses) {
@@ -154,7 +154,7 @@ async function getStatistic(event, input, start, end) {
 
   const courses = await Course.loadCourses('', start.getFullYear());
   const members = await Member.loadMembers();
-  
+
   console.log(courses);
   console.log(members);
 
@@ -197,11 +197,11 @@ async function getStatistic(event, input, start, end) {
   /*
      * Filter the results that matches all the conditions. (AND operation)
      * 1. Matches any of the following conditions (OR operation):
-     *   A. Record.cxCompanyName contains input string. (cxCompanyName is nullable)
-     *   B. Record.cxDepartmentName contains input string. (cxDepartmentName is nullable)
-     *   C. Record.courses.csTitle contains input string.
+     * A. Record.cxCompanyName contains input string. (cxCompanyName is nullable)
+     * B. Record.cxDepartmentName contains input string. (cxDepartmentName is nullable)
+     * C. Record.courses.csTitle contains input string.
      * 2. Matches the following condition:
-     *   A. Record.courses.cxCompletionDate is between start and end date.
+     * A. Record.courses.cxCompletionDate is between start and end date.
      */
   const filteredResults = [];
   results.forEach(record => {
@@ -269,6 +269,17 @@ async function onUpdateButtonClick(event) {
 
   logger.info('Starting update process', 'onUpdateButtonClick');
 
+  const year = prompt('Enter year (yyyy)', new Date().getFullYear());
+  if (!year) {
+    logger.warn('Input year is invalid', 'onUpdateButtonClick');
+    alert("Invalid input");
+    if (event) {
+      event.target.disabled = false;
+      event.target.innerHTML = '<span class="txt_white">업데이트</span>';
+    }
+    return;
+  }
+
   const controller = new AbortController();
   const signal = controller.signal;
 
@@ -276,7 +287,7 @@ async function onUpdateButtonClick(event) {
     event.target.innerHTML = '<span class="txt_white">회원정보...</span>';
     await updateMembers({ signal });
     event.target.innerHTML = '<span class="txt_white">과정정보...</span>';
-    await updateCourses({ signal });
+    await updateCourses({ signal }, year);
   } catch (error) {
     if (error?.name === 'AbortError') {
       logger.warn('Update process aborted', 'onUpdateButtonClick');

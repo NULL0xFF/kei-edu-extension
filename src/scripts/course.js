@@ -1,7 +1,7 @@
 import * as jQuery from 'jquery';
 import Logger from './logger.js';
-import {getData} from "./storage";
-import {ajaxJSON, getCSRFToken} from "./utility";
+import { getData } from "./storage";
+import { ajaxJSON, getCSRFToken } from "./utility";
 
 const logger = new Logger('course');
 
@@ -28,7 +28,7 @@ const logger = new Logger('course');
  */
 class Completion {
   constructor(csMemberSeq, csMemberId, csMemberName, cxMemberEmail,
-              csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
+    csApplyStatusCd, csStudyStartDate, csCompletionYn, cxCompletionDate) {
     this.csMemberSeq = csMemberSeq;
     this.csMemberId = csMemberId;
     this.csMemberName = csMemberName;
@@ -172,9 +172,9 @@ class Course {
   }
 
   constructor(csCourseActiveSeq, csCourseMasterSeq, csTitle, csStatusCd,
-              csCourseTypeCd, csYear, csApplyStartDate, csApplyEndDate,
-              csStudyStartDate, csStudyEndDate, csOpenStartDate, csOpenEndDate,
-              csCmplTime, csTitlePath, csCmplList = []) {
+    csCourseTypeCd, csYear, csApplyStartDate, csApplyEndDate,
+    csStudyStartDate, csStudyEndDate, csOpenStartDate, csOpenEndDate,
+    csCmplTime, csTitlePath, csCmplList = []) {
     this.csCourseActiveSeq = csCourseActiveSeq; // Class Unique Identifier
     this.csCourseMasterSeq = csCourseMasterSeq; // Class Creation Group, Master Identifier
     this.csTitle = csTitle;
@@ -247,9 +247,9 @@ class CourseRequest {
   }
 }
 
-async function getTotalCourseCount({signal}) {
+async function getTotalCourseCount({ signal }, year = '') {
   const csrf = getCSRFToken();
-  const payload = new CourseRequest();
+  const payload = new CourseRequest(10, '', year);
 
   const response = await ajaxJSON({
     url: '/course/active/selectActiveOperList.do',
@@ -259,7 +259,7 @@ async function getTotalCourseCount({signal}) {
     },
     contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
     data: jQuery.param(payload, true)
-  }, {signal, timeout: 1000, retries: 15});
+  }, { signal, timeout: 1000, retries: 15 });
 
   const count = Number(response?.cnt);
 
@@ -276,11 +276,12 @@ async function getTotalCourseCount({signal}) {
  *
  * @param signal
  * @param count - The number of courses to fetch.
+ * @param year
  * @returns {Promise<Course[]>} - A promise that resolves to an array of Course objects.
  */
-async function getAllCourses({signal}, count) {
+async function getAllCourses({ signal }, count, year = '') {
   const csrf = getCSRFToken();
-  const payload = new CourseRequest(count);
+  const payload = new CourseRequest(count, '', year);
 
   const response = await ajaxJSON({
     url: '/course/active/selectActiveOperList.do',
@@ -290,7 +291,7 @@ async function getAllCourses({signal}, count) {
     },
     contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
     data: jQuery.param(payload, true)
-  }, {signal, timeout: 20000, retries: 3});
+  }, { signal, timeout: 20000, retries: 3 });
 
   const courses = response?.list.map(course => new Course(course.csCourseActiveSeq,
     course.csCourseMasterSeq, course.csTitle, course.csStatusCd,
@@ -302,7 +303,7 @@ async function getAllCourses({signal}, count) {
   return courses;
 }
 
-async function getCourseChapterCount({signal}, csCourseActiveSeq) {
+async function getCourseChapterCount({ signal }, csCourseActiveSeq) {
   const csrf = getCSRFToken();
   const payload = {
     csCourseActiveSeq: csCourseActiveSeq,
@@ -339,7 +340,7 @@ async function getCourseChapterCount({signal}, csCourseActiveSeq) {
   return count;
 }
 
-async function getCourseExamCount({signal}, csCourseActiveSeq) {
+async function getCourseExamCount({ signal }, csCourseActiveSeq) {
   const csrf = getCSRFToken();
   const payload = {
     csCourseActiveSeq: csCourseActiveSeq,
@@ -376,7 +377,7 @@ async function getCourseExamCount({signal}, csCourseActiveSeq) {
   return count;
 }
 
-async function getCompletionCount({signal}, csCourseActiveSeq) {
+async function getCompletionCount({ signal }, csCourseActiveSeq) {
   const csrf = getCSRFToken();
   const payload = new CompletionRequest(csCourseActiveSeq);
 
@@ -408,7 +409,7 @@ async function getCompletionCount({signal}, csCourseActiveSeq) {
   return count;
 }
 
-async function getAllCompletions({signal}, csCourseActiveSeq, csCourseMasterSeq, count) {
+async function getAllCompletions({ signal }, csCourseActiveSeq, csCourseMasterSeq, count) {
   const csrf = getCSRFToken();
 
   const listPayload = new CompletionRequest(csCourseActiveSeq, count);
@@ -465,8 +466,8 @@ async function getAllCompletions({signal}, csCourseActiveSeq, csCourseMasterSeq,
     startDateMap.set(apply.csMemberSeq, apply.csStudyStartDate);
   });
   completions.forEach(completion => {
-      completion.csStudyStartDate = startDateMap.get(completion.csMemberSeq) || null;
-    }
+    completion.csStudyStartDate = startDateMap.get(completion.csMemberSeq) || null;
+  }
   );
 
   return completions;
