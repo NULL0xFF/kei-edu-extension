@@ -56,7 +56,8 @@ export class CourseService {
 
       if (filterYear) {
         const originalCount = coursesData.length;
-        coursesData = coursesData.filter(course => course.csYear === filterYear);
+        coursesData = coursesData.filter(
+            course => Number(course.csYear) === Number(filterYear));
         logger.info(
             `${filterYear}년 과정 필터링: ${originalCount}개 중 ${coursesData.length}개`);
       }
@@ -215,7 +216,8 @@ export class CourseService {
       }
 
       if (filters.year) {
-        results = results.filter(course => course.csYear >= filters.year);
+        results = results.filter(
+            course => Number(course.csYear) >= Number(filters.year));
       }
 
       if (filters.customizedOnly) {

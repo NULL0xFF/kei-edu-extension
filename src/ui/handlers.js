@@ -99,7 +99,8 @@ export function createUpdateClickHandler(button) {
       // Update courses (filtered by year)
       loading.updateMessage(`${year}년 과정 업데이트 중...`);
       const courses = await CourseService.updateCourses(year);
-      const updatedCount = courses.filter(c => c.csYear === year).length;
+      const updatedCount = courses.filter(
+          c => Number(c.csYear) === Number(year)).length;
       logger.debug(`Updated ${updatedCount} courses for year ${year}`);
 
       loading.updateMessage('완료');
