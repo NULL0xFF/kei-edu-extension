@@ -1,6 +1,7 @@
 /**
  * Date utility functions
  */
+import {logger} from "../core/error-handler";
 
 export function getFileTimestamp(date = new Date()) {
   const year = date.getFullYear();
@@ -21,14 +22,52 @@ export function parseDate(dateString) {
   if (dateString instanceof Date) {
     return dateString;
   }
-  
-  const parts = dateString.split(/[-/]/);
-  if (parts.length !== 3) {
-    throw new Error(`Invalid date format: ${dateString}`);
-  }
 
-  const [year, month, day] = parts.map(Number);
-  return new Date(year, month - 1, day);
+  let year, month, day;
+
+  try {
+    const yyyyMMdd = /^\d{8}$/;
+    if (yyyyMMdd.test(dateString)) {
+      year = parseInt(dateString.substring(0, 4), 10);
+      month = parseInt(dateString.substring(4, 6), 10);
+      day = parseInt(dateString.substring(6, 8), 10);
+    } else {
+      const parts = dateString.replace(/[./]/g, '-').split('-');
+
+      if (parts.length !== 3) {
+        logger.warn(`Invalid date format (unparseable): ${dateString}`);
+        return null;
+      }
+
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      day = parseInt(parts[2], 10);
+    }
+
+    if (year < 100) {
+      year += 2000;
+    }
+
+    if (isNaN(year) || isNaN(month) || isNaN(day) ||
+        month < 1 || month > 12 || day < 1 || day > 31) {
+      logger.warn(`Invalid date components: ${dateString}`);
+      return null;
+    }
+
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year ||
+        date.getMonth() !== month - 1 ||
+        date.getDate() !== day) {
+      logger.warn(`Invalid date (e.g., Feb 30th): ${dateString}`);
+      return null;
+    }
+
+    return date;
+
+  } catch (error) {
+    logger.error(`Failed to parse date: ${dateString}`, error);
+    return null;
+  }
 }
 
 export function formatDate(date, separator = '-') {
