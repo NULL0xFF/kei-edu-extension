@@ -4,6 +4,7 @@
 
 import {UI} from '../config/constants.js';
 import {logger} from '../core/error-handler.js';
+import {formatDate} from '../utils/date.js';
 
 export class Button {
   constructor(text, className, title = '') {
@@ -95,13 +96,25 @@ export function getSearchInput() {
     return null;
   }
 
-  const startDate = Dialog.prompt('시작일을 입력하세요 (YYYY-MM-DD)', '2024-01-01');
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  const defaultStartDate = formatDate(new Date(currentYear, 0, 1), '-');
+  const defaultEndDate = formatDate(new Date(currentYear, 11, 31), '-');
+
+  const startDate = Dialog.prompt(
+      '시작일을 입력하세요 (YYYY-MM-DD)',
+      defaultStartDate
+  );
   if (!startDate) {
     Dialog.alert('유효한 시작일을 입력하세요');
     return null;
   }
 
-  const endDate = Dialog.prompt('종료일을 입력하세요 (YYYY-MM-DD)', '2024-12-31');
+  const endDate = Dialog.prompt(
+      '종료일을 입력하세요 (YYYY-MM-DD)',
+      defaultEndDate
+  );
   if (!endDate) {
     Dialog.alert('유효한 종료일을 입력하세요');
     return null;
