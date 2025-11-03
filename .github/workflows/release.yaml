@@ -11,36 +11,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the repository code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Node.js environment
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Step 4: Build the project
-      - name: Build the project
+      - name: Build project
         run: npm run build
 
-      # Step 5: Get version from package.json
       - name: Get version from package.json
         id: get_version
         run: |
           echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
-      # Step 6: Create zip file of build artifacts
-      - name: Create zip file of build artifacts
+      - name: Create zip file
         run: cd dist && zip -r ../build-artifacts.zip .
 
-      # Step 7: Create Release
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -52,7 +45,6 @@ jobs:
           draft: false
           prerelease: false
 
-      # Step 8: Upload Release Asset
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         env:
