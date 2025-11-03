@@ -155,7 +155,7 @@ export class StatisticsService {
     const coursesMap = new Map();
     records.forEach(record => {
       record.courses.forEach(course => {
-        const key = `${course.csCourseActiveSeq}-${course.csCourseMasterSeq}`;
+        const key = course.csTitle.trim();
         if (!coursesMap.has(key)) {
           coursesMap.set(key, course);
         }
@@ -169,7 +169,7 @@ export class StatisticsService {
 
     const headers = [
       '아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
-      ...courses.map(c => c.csTitle)
+      ...courses.map(c => c.csTitle.trim())
     ];
 
     const rows = [headers];
@@ -185,13 +185,17 @@ export class StatisticsService {
       ];
 
       courses.forEach(course => {
-        const key = `${course.csCourseActiveSeq}-${course.csCourseMasterSeq}`;
-        const memberCourse = record.courses.find(
-            c => `${c.csCourseActiveSeq}-${c.csCourseMasterSeq}` === key
+        const trimmedTitle = course.csTitle.trim();
+
+        const memberCourses = record.courses.filter(
+            c => c.csTitle.trim() === trimmedTitle && c.csCompletionYn === 'Y'
         );
 
-        if (memberCourse && memberCourse.csCompletionYn === 'Y') {
-          row.push(String(memberCourse.csCmplTime || 0));
+        if (memberCourses.length > 0) {
+          const maxCompletionTime = Math.max(
+              ...memberCourses.map(c => c.csCmplTime || 0)
+          );
+          row.push(String(maxCompletionTime));
         } else {
           row.push('0');
         }
@@ -208,7 +212,7 @@ export class StatisticsService {
 
     const headers = [
       '아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
-      ...courses.map(c => c.csTitle)
+      ...courses.map(c => c.csTitle.trim())
     ];
 
     const rows = [headers];
@@ -224,13 +228,17 @@ export class StatisticsService {
       ];
 
       courses.forEach(course => {
-        const key = `${course.csCourseActiveSeq}-${course.csCourseMasterSeq}`;
-        const memberCourse = record.courses.find(
-            c => `${c.csCourseActiveSeq}-${c.csCourseMasterSeq}` === key
+        const trimmedTitle = course.csTitle.trim();
+
+        const memberCourses = record.courses.filter(
+            c => c.csTitle.trim() === trimmedTitle && c.csCompletionYn === 'Y'
         );
 
-        if (memberCourse && memberCourse.csCompletionYn === 'Y') {
-          row.push(memberCourse.csCmplTime || 0);
+        if (memberCourses.length > 0) {
+          const maxCompletionTime = Math.max(
+              ...memberCourses.map(c => c.csCmplTime || 0)
+          );
+          row.push(maxCompletionTime);
         } else {
           row.push(0);
         }
@@ -248,7 +256,10 @@ export class StatisticsService {
     const headers = [
       '아이디', '이름', '생년월일', '소속기관', '부서', '이메일',
       ...courses.flatMap(
-          c => [c.csTitle, `${c.csTitle} 시작일`, `${c.csTitle} 종료일`])
+          c => {
+            const trimmedTitle = c.csTitle.trim();
+            return [trimmedTitle, `${trimmedTitle} 시작일`, `${trimmedTitle} 종료일`];
+          })
     ];
 
     const rows = [headers];
@@ -264,17 +275,24 @@ export class StatisticsService {
       ];
 
       courses.forEach(course => {
-        const key = `${course.csCourseActiveSeq}-${course.csCourseMasterSeq}`;
-        const memberCourse = record.courses.find(
-            c => `${c.csCourseActiveSeq}-${c.csCourseMasterSeq}` === key
+        const trimmedTitle = course.csTitle.trim();
+
+        const memberCourses = record.courses.filter(
+            c => c.csTitle.trim() === trimmedTitle
+                && c.csCompletionYn === 'Y'
+                && c.cxCompletionDate
         );
 
-        if (memberCourse && memberCourse.csCompletionYn === 'Y'
-            && memberCourse.cxCompletionDate) {
+        if (memberCourses.length > 0) {
+          const bestCourse = memberCourses.reduce((max, current) => {
+            return (current.csCmplTime || 0) > (max.csCmplTime || 0) ? current
+                : max;
+          });
+
           row.push(
-              memberCourse.csCmplTime || 0,
-              formatDate(parseDate(course.csStudyStartDate), '-') || '',
-              formatDate(memberCourse.cxCompletionDate, '-') || ''
+              bestCourse.csCmplTime || 0,
+              formatDate(parseDate(bestCourse.csStudyStartDate), '-') || '',
+              formatDate(bestCourse.cxCompletionDate, '-') || ''
           );
         } else {
           row.push(0, '', '');
@@ -294,8 +312,8 @@ export class StatisticsService {
 
     records.forEach(record => {
       record.courses.forEach(course => {
-        coursesSet.add(
-            `${course.csCourseActiveSeq}-${course.csCourseMasterSeq}`);
+        coursesSet.add(course.csTitle.trim());
+
         if (course.csCompletionYn === 'Y') {
           totalCompletions++;
           totalCompletionTime += course.csCmplTime || 0;
