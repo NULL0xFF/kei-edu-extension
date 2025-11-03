@@ -42,6 +42,11 @@ export function formatDate(date, separator = '-') {
 }
 
 export function formatCompletionDate(dateString) {
+  // If already a Date object, return it
+  if (dateString instanceof Date) {
+    return dateString;
+  }
+
   if (!dateString || dateString.length !== 14) {
     return null;
   }
