@@ -41,6 +41,25 @@ export class Course {
 }
 
 export class CourseService {
+  static formatCompletionDate(dateString) {
+    if (!dateString || dateString.length !== 14) {
+      return null;
+    }
+
+    const timezoneOffset = new Date().getTimezoneOffset() * 60000;
+
+    const year = dateString.substring(0, 4);
+    const month = dateString.substring(4, 6);
+    const day = dateString.substring(6, 8);
+    const hour = dateString.substring(8, 10);
+    const minute = dateString.substring(10, 12);
+    const second = dateString.substring(12, 14);
+
+    return new Date(
+        Date.UTC(year, month - 1, day, hour, minute, second) + timezoneOffset
+    );
+  }
+
   static async fetchAllCourses(filterYear = null) {
     try {
       logger.info('과정 목록 조회 중...');
@@ -111,6 +130,10 @@ export class CourseService {
 
             completions.forEach(comp => {
               comp.csStudyStartDate = startDateMap.get(comp.csMemberSeq) || '';
+              if (comp.cxCompletionDate) {
+                comp.cxCompletionDate = this.formatCompletionDate(
+                    comp.cxCompletionDate);
+              }
             });
 
             courseData.csCmplList = completions;

@@ -12,26 +12,23 @@ export function getFileTimestamp(date = new Date()) {
   return `${year}-${month}-${day}_${hours}${minutes}${seconds}`;
 }
 
-export function parseDate(input) {
-  if (!input) {
+export function parseDate(dateString) {
+  if (!dateString) {
     return null;
   }
 
-  if (input instanceof Date) {
-    return input;
+  // If already a Date object, return it
+  if (dateString instanceof Date) {
+    return dateString;
+  }
+  
+  const parts = dateString.split(/[-/]/);
+  if (parts.length !== 3) {
+    throw new Error(`Invalid date format: ${dateString}`);
   }
 
-  // Handle string formats
-  if (typeof input === 'string') {
-    // YYYY-MM-DD or YYYY.MM.DD
-    const parts = input.split(/[-./]/);
-    if (parts.length === 3) {
-      const [year, month, day] = parts.map(Number);
-      return new Date(year, month - 1, day);
-    }
-  }
-
-  return null;
+  const [year, month, day] = parts.map(Number);
+  return new Date(year, month - 1, day);
 }
 
 export function formatDate(date, separator = '-') {
