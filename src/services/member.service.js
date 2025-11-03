@@ -57,8 +57,7 @@ export class MemberService {
       const membersData = await MemberApi.getAllApprovedMembers(totalCount);
       logger.info(`${membersData.length}명 조회 완료`);
 
-      const members = membersData.map(data => new Member(data));
-      return members;
+      return membersData.map(data => new Member(data));
     } catch (error) {
       logger.error('Failed to fetch members', error);
       throw error;
