@@ -72,20 +72,65 @@ export class StatisticsService {
       logger.info(`날짜 범위: ${start || 'N/A'} ~ ${end || 'N/A'}`);
 
       // Load data
-      const [members, courses] = await Promise.all([
-        MemberService.searchMembers({keyword}),
+      const [allMembers, allCourses] = await Promise.all([
+        MemberService.searchMembers({}),
         CourseService.searchCourses({year})
       ]);
 
-      logger.info(`데이터 처리: 회원 ${members.length}명, 과정 ${courses.length}개`);
+      let targetMembers = allMembers;
+
+      // Filter members
+      if (keyword && keyword.trim() !== '') {
+        logger.info(`키워드 "${keyword}"로 합집합 검색 중...`);
+        const lowerKeyword = keyword.toLowerCase();
+        const finalMemberSet = new Set(); // Store member sequences (csMemberSeq)
+
+        // Condition 1 (Set 1): Members by organization
+        allMembers.forEach(member => {
+          if (member.belongsToOrganization(lowerKeyword)) {
+            finalMemberSet.add(member.csMemberSeq);
+          }
+        });
+        logger.info(`(조건 1) 소속/부서 일치: ${finalMemberSet.size}명`);
+
+        // Condition 2 (Set 2): Members by course title
+        const matchingCourses = allCourses.filter(course =>
+            course.csTitle.toLowerCase().includes(lowerKeyword)
+        );
+
+        const set2MemberCount = new Set();
+        if (matchingCourses.length > 0) {
+          logger.info(
+              `(조건 2) "${lowerKeyword}" 포함 과정 ${matchingCourses.length}개 발견`);
+          // Find all members who took these courses
+          matchingCourses.forEach(course => {
+            course.csCmplList.forEach(completion => {
+              finalMemberSet.add(completion.csMemberSeq);
+              set2MemberCount.add(completion.csMemberSeq);
+            });
+          });
+        }
+        logger.info(`(조건 2) 과정 수강생: ${set2MemberCount.size}명`);
+
+        // Create final list from the Set (Union)
+        logger.info(`총 합집합 멤버: ${finalMemberSet.size}명`);
+        targetMembers = allMembers.filter(
+            member => finalMemberSet.has(member.csMemberSeq));
+      } else {
+        logger.info('키워드가 없으므로 전체 멤버를 대상으로 통계를 생성합니다.');
+        // targetMembers is already allMembers
+      }
+
+      logger.info(
+          `데이터 처리: 회원 ${targetMembers.length}명, 과정 ${allCourses.length}개`);
 
       // Generate records
       const records = [];
 
-      for (const member of members) {
+      for (const member of targetMembers) {
         const record = new StatRecord(member);
 
-        for (const course of courses) {
+        for (const course of allCourses) {
           const completion = course.getCompletionByMember(member.csMemberSeq);
 
           if (!completion) {
@@ -113,7 +158,7 @@ export class StatisticsService {
             csYear: course.csYear,
             csApplyStartDate: course.csApplyStartDate,
             csApplyEndDate: course.csApplyEndDate,
-            csStudyStartDate: course.csStudyStartDate,
+            csStudyStartDate: completion.csStudyStartDate,
             csStudyEndDate: course.csStudyEndDate,
             csOpenStartDate: course.csOpenStartDate,
             csOpenEndDate: course.csOpenEndDate,
