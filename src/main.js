@@ -55,7 +55,7 @@ function initDashboardPage() {
 }
 
 function init() {
-  logger.info('KEI Edu Admin Tools v2.0.0 initializing...');
+  logger.info('KEI Edu Admin Tools initializing...');
 
   const url = window.location.href;
 
@@ -65,7 +65,7 @@ function init() {
     initDashboardPage();
   }
 
-  logger.info('KEI Edu Admin Tools v2.0.0 initialized');
+  logger.info('KEI Edu Admin Tools initialized');
 }
 
 if (document.readyState === 'loading') {
